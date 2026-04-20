@@ -125,12 +125,13 @@ function initialState() {
 function normalizeState(nextState) {
   const fallback = initialState();
   const pages = Array.isArray(nextState.pages) && nextState.pages.length ? nextState.pages : fallback.pages;
+  const normalizedDomain = normalizePublishDomain(nextState.domain);
   return {
     ...nextState,
     activePageId: pages.some((page) => page.id === nextState.activePageId) ? nextState.activePageId : pages[0].id,
     toast: "",
     dbStatus: isSupabaseConfigured ? nextState.dbStatus || "Supabase ready" : "Local only",
-    domain: nextState.domain || publicDomain,
+    domain: normalizedDomain,
     session: nextState.session || null,
     workspace: nextState.workspace || null,
     draggedSectionId: null,
@@ -211,6 +212,8 @@ export default function App() {
   const [state, setState] = useState(loadState);
   const page = useMemo(() => state.pages.find((item) => item.id === state.activePageId) || state.pages[0], [state.pages, state.activePageId]);
   const selected = page.sections.find((section) => section.id === state.selectedSectionId) || page.sections[0];
+  const activePublishDomain = normalizePublishDomain(state.domain);
+  const activeVisitUrl = page?.slug ? `https://${activePublishDomain}/${page.slug}/` : page?.publishedUrl;
 
   useEffect(() => {
     const persistable = { ...state, toast: "", draggedSectionId: null, dropTargetId: null, dropPosition: null, session: null, workspace: null };
@@ -548,8 +551,8 @@ export default function App() {
           <div className="top-actions">
             <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
             <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
-            {page.status === "Published" && page.publishedUrl && (
-              <a className="ghost-btn" href={page.publishedUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Site</a>
+            {page.status === "Published" && activeVisitUrl && (
+              <a className="ghost-btn" href={activeVisitUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Site</a>
             )}
             <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
             <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
@@ -1373,6 +1376,12 @@ function cleanHostname(value) {
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .toLowerCase();
+}
+
+function normalizePublishDomain(value) {
+  const hostname = cleanHostname(value);
+  if (!hostname || hostname === "lp.jualify.id") return publicDomain;
+  return hostname;
 }
 
 function whatsappHref(section) {
