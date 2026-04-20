@@ -91,6 +91,7 @@ function createSections(types) {
 }
 
 function initialState() {
+  const inviteEmail = getInviteEmailFromUrl();
   return {
     activeView: "dashboard",
     previewMode: "mobile",
@@ -104,10 +105,10 @@ function initialState() {
     pixelId: "1234567890",
     domain: publicDomain,
     dbStatus: isSupabaseConfigured ? "Supabase ready" : "Local only",
-    authMode: "login",
-    authEmail: "",
+    authMode: inviteEmail ? "register" : "login",
+    authEmail: inviteEmail,
     authPassword: "",
-    resetEmail: "",
+    resetEmail: inviteEmail,
     newPassword: "",
     confirmPassword: "",
     inviteEmail: "",
@@ -138,6 +139,7 @@ function initialState() {
 
 function normalizeState(nextState) {
   const fallback = initialState();
+  const inviteEmail = getInviteEmailFromUrl();
   const pages = Array.isArray(nextState.pages) && nextState.pages.length ? nextState.pages : fallback.pages;
   const normalizedDomain = normalizePublishDomain(nextState.domain);
   return {
@@ -148,6 +150,8 @@ function normalizeState(nextState) {
     domain: normalizedDomain,
     session: nextState.session || null,
     workspace: nextState.workspace || null,
+    authMode: inviteEmail ? "register" : nextState.authMode || "login",
+    authEmail: inviteEmail || nextState.authEmail || "",
     resetEmail: nextState.resetEmail || "",
     newPassword: "",
     confirmPassword: "",
@@ -817,6 +821,7 @@ function Templates({ addPage }) {
 function AuthScreen({ state, setState, onSubmit }) {
   const isLogin = state.authMode === "login";
   const isForgot = state.authMode === "forgot";
+  const hasInvite = Boolean(getInviteEmailFromUrl());
   return (
     <main className="auth-screen">
       <section className="auth-panel">
@@ -830,7 +835,7 @@ function AuthScreen({ state, setState, onSubmit }) {
         <div>
           <p className="eyebrow">Supabase Auth</p>
           <h1>{isForgot ? "Reset password" : isLogin ? "Login builder" : "Buat akun builder"}</h1>
-          <p className="muted">{isForgot ? "Kirim link reset password ke email akun builder." : "Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage."}</p>
+          <p className="muted">{hasInvite ? "Email kamu sudah diundang. Register atau login memakai email ini untuk masuk workspace tim." : isForgot ? "Kirim link reset password ke email akun builder." : "Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage."}</p>
         </div>
         <form className="form-grid" onSubmit={onSubmit}>
           <TextField
@@ -1339,6 +1344,17 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onIn
   const isOwner = state.workspace?.owner_id === state.session?.user?.id;
   const pendingInvites = (state.invites || []).filter((invite) => !invite.accepted_at);
 
+  async function copyInviteLink(email) {
+    const link = inviteLinkForEmail(email);
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setState((current) => ({ ...current, toast: "Invite link disalin." }));
+    } catch {
+      window.prompt("Copy invite link:", link);
+    }
+  }
+
   return (
     <div className="grid cols-2">
       <article className="card">
@@ -1377,7 +1393,7 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onIn
       </article>
       <article className="card user-management-card">
         <h2>User management</h2>
-        <p className="muted">Kelola member workspace internal dengan email. Jika user belum punya akun, dia cukup register memakai email yang sama lalu otomatis masuk workspace ini.</p>
+        <p className="muted">Kelola member workspace internal dengan email. Sistem tidak mengirim email otomatis; gunakan Copy Invite Link lalu kirim link tersebut ke user.</p>
         <div className="member-list">
           {(state.members || []).map((member) => (
             <div className="member-row" key={member.user_id}>
@@ -1405,6 +1421,8 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onIn
               </div>
               <div className="row-actions">
                 <span className="status">{invite.role}</span>
+                <button className="tiny-btn" onClick={() => copyInviteLink(invite.email)}>Copy Invite Link</button>
+                <a className="tiny-btn" href={`mailto:${invite.email}?subject=Invite LandingPro&body=${encodeURIComponent(`Halo, silakan register/login LandingPro lewat link ini:\n\n${inviteLinkForEmail(invite.email)}`)}`}>Email</a>
                 {isOwner && (
                   <button className="tiny-btn danger-btn" onClick={() => onRemoveInvite(invite.id)}>Remove</button>
                 )}
@@ -1423,7 +1441,7 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onIn
                 <option value="admin">Admin</option>
               </select>
             </div>
-            <button className="primary-btn" type="submit">Invite by Email</button>
+            <button className="primary-btn" type="submit">Add Invite</button>
           </form>
         ) : (
           <p className="muted">Hanya owner workspace yang bisa menambahkan atau menghapus member.</p>
@@ -1617,6 +1635,17 @@ function normalizePublishDomain(value) {
   const hostname = cleanHostname(value);
   if (!hostname || hostname === "lp.jualify.id") return publicDomain;
   return hostname;
+}
+
+function getInviteEmailFromUrl() {
+  if (typeof window === "undefined") return "";
+  return String(new URLSearchParams(window.location.search).get("invite") || "").trim().toLowerCase();
+}
+
+function inviteLinkForEmail(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (typeof window === "undefined" || !normalizedEmail) return "";
+  return `${window.location.origin}/?invite=${encodeURIComponent(normalizedEmail)}`;
 }
 
 function whatsappHref(section) {
