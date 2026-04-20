@@ -110,7 +110,7 @@ VITE_SUPABASE_WORKSPACE_ID=novamos
 VITE_PUBLIC_LP_DOMAIN=lp.novamos.id
 ```
 
-File `public/_redirects` sudah disiapkan agar React SPA tetap terbuka saat halaman di-refresh.
+Untuk Cloudflare Workers/Pages mode baru, SPA fallback ditangani oleh konfigurasi platform. Tidak perlu menambahkan file `_redirects`.
 
 ## Isi Aplikasi
 
