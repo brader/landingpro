@@ -13,6 +13,10 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
 export async function getCurrentSession() {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
@@ -60,6 +64,7 @@ export async function signOut() {
 
 export async function ensureUserWorkspace(user) {
   if (!supabase || !user) return null;
+  const email = normalizeEmail(user.email);
 
   const { data: existing, error: selectError } = await supabase
     .from("workspaces")
@@ -91,6 +96,48 @@ export async function ensureUserWorkspace(user) {
 
     if (workspaceError) throw workspaceError;
     if (memberWorkspace) return memberWorkspace;
+  }
+
+  if (email) {
+    const { data: invite, error: inviteError } = await supabase
+      .from("workspace_invites")
+      .select("id,workspace_id,role,email,created_at")
+      .eq("email", email)
+      .is("accepted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (inviteError) throw inviteError;
+
+    if (invite?.workspace_id) {
+      const { error: insertMemberError } = await supabase
+        .from("workspace_members")
+        .insert({
+          workspace_id: invite.workspace_id,
+          user_id: user.id,
+          email,
+          role: invite.role || "member"
+        });
+
+      if (insertMemberError) throw insertMemberError;
+
+      const { error: acceptInviteError } = await supabase
+        .from("workspace_invites")
+        .update({ accepted_at: new Date().toISOString() })
+        .eq("id", invite.id);
+
+      if (acceptInviteError) throw acceptInviteError;
+
+      const { data: invitedWorkspace, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("*")
+        .eq("id", invite.workspace_id)
+        .single();
+
+      if (workspaceError) throw workspaceError;
+      if (invitedWorkspace) return invitedWorkspace;
+    }
   }
 
   const { data: workspace, error: insertError } = await supabase
@@ -135,12 +182,47 @@ export async function loadWorkspaceMembers(workspace) {
 
   const { data, error } = await supabase
     .from("workspace_members")
-    .select("workspace_id,user_id,role,created_at")
+    .select("workspace_id,user_id,email,role,created_at")
     .eq("workspace_id", workspace.id)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
   return data || [];
+}
+
+export async function loadWorkspaceInvites(workspace) {
+  if (!supabase || !workspace) return [];
+
+  const { data, error } = await supabase
+    .from("workspace_invites")
+    .select("id,workspace_id,email,role,accepted_at,created_at")
+    .eq("workspace_id", workspace.id)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function inviteWorkspaceMember(workspace, email, role = "member", invitedBy = null) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!supabase || !workspace || !normalizedEmail) return null;
+
+  const { data, error } = await supabase
+    .from("workspace_invites")
+    .upsert({
+      workspace_id: workspace.id,
+      email: normalizedEmail,
+      role,
+      invited_by: invitedBy,
+      accepted_at: null
+    }, {
+      onConflict: "workspace_id,email"
+    })
+    .select("id,workspace_id,email,role,accepted_at,created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function addWorkspaceMember(workspace, userId, role = "member") {
@@ -153,11 +235,23 @@ export async function addWorkspaceMember(workspace, userId, role = "member") {
       user_id: userId,
       role
     })
-    .select("workspace_id,user_id,role,created_at")
+    .select("workspace_id,user_id,email,role,created_at")
     .single();
 
   if (error) throw error;
   return data;
+}
+
+export async function removeWorkspaceInvite(workspace, inviteId) {
+  if (!supabase || !workspace || !inviteId) return;
+
+  const { error } = await supabase
+    .from("workspace_invites")
+    .delete()
+    .eq("workspace_id", workspace.id)
+    .eq("id", inviteId);
+
+  if (error) throw error;
 }
 
 export async function removeWorkspaceMember(workspace, userId) {

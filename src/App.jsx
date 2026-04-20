@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  addWorkspaceMember,
   ensureUserWorkspace,
   getCurrentSession,
+  inviteWorkspaceMember,
   isSupabaseConfigured,
+  loadWorkspaceInvites,
   loadWorkspaceMembers,
   loadWorkspacePages,
   onAuthChange,
   publicDomain,
   publishStaticPage,
+  removeWorkspaceInvite,
   removeWorkspaceMember,
   sendPasswordReset,
   signIn,
@@ -108,9 +110,10 @@ function initialState() {
     resetEmail: "",
     newPassword: "",
     confirmPassword: "",
-    memberUserId: "",
+    inviteEmail: "",
     memberRole: "member",
     members: [],
+    invites: [],
     session: null,
     workspace: null,
     toast: "",
@@ -148,9 +151,10 @@ function normalizeState(nextState) {
     resetEmail: nextState.resetEmail || "",
     newPassword: "",
     confirmPassword: "",
-    memberUserId: nextState.memberUserId || "",
+    inviteEmail: nextState.inviteEmail || "",
     memberRole: nextState.memberRole || "member",
     members: Array.isArray(nextState.members) ? nextState.members : [],
+    invites: Array.isArray(nextState.invites) ? nextState.invites : [],
     draggedSectionId: null,
     dropTargetId: null,
     dropPosition: null,
@@ -233,7 +237,7 @@ export default function App() {
   const activeVisitUrl = page?.slug ? `https://${activePublishDomain}/${page.slug}/` : page?.publishedUrl;
 
   useEffect(() => {
-    const persistable = { ...state, toast: "", draggedSectionId: null, dropTargetId: null, dropPosition: null, session: null, workspace: null, newPassword: "", confirmPassword: "", members: [] };
+    const persistable = { ...state, toast: "", draggedSectionId: null, dropTargetId: null, dropPosition: null, session: null, workspace: null, newPassword: "", confirmPassword: "", members: [], invites: [] };
     safeStorageSet(storeKey, JSON.stringify(persistable));
   }, [state]);
 
@@ -283,11 +287,13 @@ export default function App() {
     const workspace = await ensureUserWorkspace(session.user);
     const dbPages = await loadWorkspacePages(workspace);
     const members = await loadWorkspaceMembers(workspace);
+    const invites = await loadWorkspaceInvites(workspace);
     setState((current) => normalizeState({
       ...current,
       session,
       workspace,
       members,
+      invites,
       pages: dbPages.length ? dbPages : current.pages,
       activePageId: dbPages.length ? dbPages[0].id : current.activePageId,
       selectedSectionId: dbPages.length ? dbPages[0].sections?.[0]?.id || null : current.selectedSectionId,
@@ -562,23 +568,26 @@ export default function App() {
     }
   }
 
-  async function refreshMembers(workspace = state.workspace) {
+  async function refreshUsers(workspace = state.workspace) {
     if (!workspace) return;
-    const members = await loadWorkspaceMembers(workspace);
-    setState((current) => ({ ...current, members }));
+    const [members, invites] = await Promise.all([
+      loadWorkspaceMembers(workspace),
+      loadWorkspaceInvites(workspace)
+    ]);
+    setState((current) => ({ ...current, members, invites }));
   }
 
-  async function handleAddMember(event) {
+  async function handleInviteMember(event) {
     event.preventDefault();
-    if (!state.workspace || !state.memberUserId) {
-      setState((current) => ({ ...current, toast: "Isi User ID Supabase member." }));
+    if (!state.workspace || !state.inviteEmail) {
+      setState((current) => ({ ...current, toast: "Isi email member." }));
       return;
     }
-    setState((current) => ({ ...current, dbStatus: "Adding member..." }));
+    setState((current) => ({ ...current, dbStatus: "Inviting member..." }));
     try {
-      await addWorkspaceMember(state.workspace, state.memberUserId.trim(), state.memberRole);
-      await refreshMembers();
-      setState((current) => ({ ...current, memberUserId: "", dbStatus: "Member added", toast: "Member berhasil ditambahkan." }));
+      await inviteWorkspaceMember(state.workspace, state.inviteEmail, state.memberRole, state.session?.user?.id || null);
+      await refreshUsers();
+      setState((current) => ({ ...current, inviteEmail: "", dbStatus: "Invite added", toast: "Invite email berhasil ditambahkan." }));
     } catch (error) {
       setState((current) => ({ ...current, dbStatus: "Member error", toast: error.message }));
     }
@@ -589,8 +598,20 @@ export default function App() {
     setState((current) => ({ ...current, dbStatus: "Removing member..." }));
     try {
       await removeWorkspaceMember(state.workspace, userId);
-      await refreshMembers();
+      await refreshUsers();
       setState((current) => ({ ...current, dbStatus: "Member removed", toast: "Member berhasil dihapus." }));
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Member error", toast: error.message }));
+    }
+  }
+
+  async function handleRemoveInvite(inviteId) {
+    if (!state.workspace || !inviteId) return;
+    setState((current) => ({ ...current, dbStatus: "Removing invite..." }));
+    try {
+      await removeWorkspaceInvite(state.workspace, inviteId);
+      await refreshUsers();
+      setState((current) => ({ ...current, dbStatus: "Invite removed", toast: "Invite berhasil dihapus." }));
     } catch (error) {
       setState((current) => ({ ...current, dbStatus: "Member error", toast: error.message }));
     }
@@ -698,8 +719,9 @@ export default function App() {
             setState={setState}
             onChangePassword={handleChangePassword}
             onSendResetPassword={handleSendResetPassword}
-            onAddMember={handleAddMember}
+            onInviteMember={handleInviteMember}
             onRemoveMember={handleRemoveMember}
+            onRemoveInvite={handleRemoveInvite}
           />
         )}
         {state.activeView === "blueprint" && <Blueprint />}
@@ -1313,8 +1335,9 @@ function Analytics({ state, setState }) {
   );
 }
 
-function Settings({ state, setState, onChangePassword, onSendResetPassword, onAddMember, onRemoveMember }) {
+function Settings({ state, setState, onChangePassword, onSendResetPassword, onInviteMember, onRemoveMember, onRemoveInvite }) {
   const isOwner = state.workspace?.owner_id === state.session?.user?.id;
+  const pendingInvites = (state.invites || []).filter((invite) => !invite.accepted_at);
 
   return (
     <div className="grid cols-2">
@@ -1354,13 +1377,13 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onAd
       </article>
       <article className="card user-management-card">
         <h2>User management</h2>
-        <p className="muted">Kelola member workspace internal. Untuk menambahkan user, user tersebut perlu register dulu lalu copy User ID Supabase-nya.</p>
+        <p className="muted">Kelola member workspace internal dengan email. Jika user belum punya akun, dia cukup register memakai email yang sama lalu otomatis masuk workspace ini.</p>
         <div className="member-list">
           {(state.members || []).map((member) => (
             <div className="member-row" key={member.user_id}>
               <div>
-                <strong>{member.user_id === state.session?.user?.id ? "You" : "Member"}</strong>
-                <p className="muted">{member.user_id}</p>
+                <strong>{member.user_id === state.session?.user?.id ? "You" : member.email || "Member"}</strong>
+                <p className="muted">{member.email || (member.user_id === state.session?.user?.id ? state.session?.user?.email : member.user_id)}</p>
               </div>
               <div className="row-actions">
                 <span className="status">{member.role}</span>
@@ -1370,10 +1393,29 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onAd
               </div>
             </div>
           ))}
+          {!state.members?.length && <p className="muted">Belum ada member di workspace ini.</p>}
+        </div>
+        <h3>Pending invites</h3>
+        <div className="member-list">
+          {pendingInvites.map((invite) => (
+            <div className="member-row" key={invite.id}>
+              <div>
+                <strong>{invite.email}</strong>
+                <p className="muted">Menunggu login/register dengan email ini</p>
+              </div>
+              <div className="row-actions">
+                <span className="status">{invite.role}</span>
+                {isOwner && (
+                  <button className="tiny-btn danger-btn" onClick={() => onRemoveInvite(invite.id)}>Remove</button>
+                )}
+              </div>
+            </div>
+          ))}
+          {!pendingInvites.length && <p className="muted">Tidak ada invite yang menunggu.</p>}
         </div>
         {isOwner ? (
-          <form className="form-grid" onSubmit={onAddMember}>
-            <TextField label="User ID Supabase" value={state.memberUserId} onChange={(value) => setState((current) => ({ ...current, memberUserId: value }))} />
+          <form className="form-grid" onSubmit={onInviteMember}>
+            <TextField label="Email member" value={state.inviteEmail} onChange={(value) => setState((current) => ({ ...current, inviteEmail: value }))} />
             <div className="field">
               <label>Role</label>
               <select value={state.memberRole} onChange={(event) => setState((current) => ({ ...current, memberRole: event.target.value }))}>
@@ -1381,7 +1423,7 @@ function Settings({ state, setState, onChangePassword, onSendResetPassword, onAd
                 <option value="admin">Admin</option>
               </select>
             </div>
-            <button className="primary-btn" type="submit">Tambah Member</button>
+            <button className="primary-btn" type="submit">Invite by Email</button>
           </form>
         ) : (
           <p className="muted">Hanya owner workspace yang bisa menambahkan atau menghapus member.</p>

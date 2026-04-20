@@ -19,6 +19,20 @@ create table if not exists workspace_members (
   primary key (workspace_id, user_id)
 );
 
+alter table workspace_members
+  add column if not exists email text;
+
+create table if not exists workspace_invites (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  email text not null,
+  role text not null default 'member',
+  invited_by uuid references auth.users(id) on delete set null,
+  accepted_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (workspace_id, email)
+);
+
 create table if not exists landing_pages (
   id text primary key,
   workspace_id text not null default 'default',
@@ -136,6 +150,7 @@ $$ language plpgsql security definer;
 
 alter table workspaces enable row level security;
 alter table workspace_members enable row level security;
+alter table workspace_invites enable row level security;
 alter table landing_pages enable row level security;
 alter table form_submissions enable row level security;
 alter table analytics_events enable row level security;
@@ -178,6 +193,15 @@ on workspace_members for insert
 to authenticated
 with check (
   is_workspace_owner(workspace_members.workspace_id)
+  or (
+    workspace_members.user_id = auth.uid()
+    and exists (
+      select 1 from workspace_invites
+      where workspace_invites.workspace_id = workspace_members.workspace_id
+        and lower(workspace_invites.email) = lower(auth.jwt() ->> 'email')
+        and workspace_invites.accepted_at is null
+    )
+  )
 );
 
 drop policy if exists "workspace_members owner delete" on workspace_members;
@@ -187,6 +211,45 @@ to authenticated
 using (
   is_workspace_owner(workspace_members.workspace_id)
   and workspace_members.user_id <> auth.uid()
+);
+
+drop policy if exists "workspace_invites owner and invitee select" on workspace_invites;
+create policy "workspace_invites owner and invitee select"
+on workspace_invites for select
+to authenticated
+using (
+  is_workspace_owner(workspace_invites.workspace_id)
+  or lower(workspace_invites.email) = lower(auth.jwt() ->> 'email')
+);
+
+drop policy if exists "workspace_invites owner insert" on workspace_invites;
+create policy "workspace_invites owner insert"
+on workspace_invites for insert
+to authenticated
+with check (
+  is_workspace_owner(workspace_invites.workspace_id)
+);
+
+drop policy if exists "workspace_invites owner delete" on workspace_invites;
+create policy "workspace_invites owner delete"
+on workspace_invites for delete
+to authenticated
+using (
+  is_workspace_owner(workspace_invites.workspace_id)
+  and workspace_invites.accepted_at is null
+);
+
+drop policy if exists "workspace_invites accept own invite" on workspace_invites;
+create policy "workspace_invites accept own invite"
+on workspace_invites for update
+to authenticated
+using (
+  is_workspace_owner(workspace_invites.workspace_id)
+  or lower(workspace_invites.email) = lower(auth.jwt() ->> 'email')
+)
+with check (
+  is_workspace_owner(workspace_invites.workspace_id)
+  or lower(workspace_invites.email) = lower(auth.jwt() ->> 'email')
 );
 
 drop policy if exists "landing_pages anon all" on landing_pages;
