@@ -549,13 +549,17 @@ export default function App() {
             <h1>{viewTitle}</h1>
           </div>
           <div className="top-actions">
-            <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
-            <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
-            {page.status === "Published" && activeVisitUrl && (
-              <a className="ghost-btn" href={activeVisitUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Site</a>
+            {state.activeView === "editor" && (
+              <>
+                <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
+                <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
+                {page.status === "Published" && activeVisitUrl && (
+                  <a className="ghost-btn" href={activeVisitUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Page</a>
+                )}
+                <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
+                <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
+              </>
             )}
-            <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
-            <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
             {state.session && <button className="ghost-btn" onClick={handleSignOut} title="Sign out">Logout</button>}
           </div>
         </header>
@@ -637,6 +641,9 @@ function Pages({ pages, domain, editPage, duplicatePage, addPage }) {
             </div>
             <div className="row-actions">
               <span className="status">{page.status}</span>
+              {page.status === "Published" && (
+                <a className="tiny-btn" href={`https://${normalizePublishDomain(domain)}/${page.slug}/`} target="_blank" rel="noreferrer">Visit Page</a>
+              )}
               <button className="tiny-btn" onClick={() => editPage(page.id)}>Edit</button>
               <button className="tiny-btn" onClick={() => duplicatePage(page.id)}>Duplicate</button>
             </div>
