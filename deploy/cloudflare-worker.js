@@ -42,10 +42,13 @@ export default {
       return new Response("Published HTML not found", { status: 404 });
     }
 
-    const headers = new Headers(htmlResponse.headers);
-    headers.set("content-type", "text/html;charset=utf-8");
-    headers.set("cache-control", "public, max-age=300, stale-while-revalidate=86400");
-    headers.set("x-landingpro-slug", slug);
+    const headers = new Headers({
+      "content-type": "text/html;charset=utf-8",
+      "cache-control": "public, max-age=300, stale-while-revalidate=86400",
+      "x-landingpro-slug": slug,
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "strict-origin-when-cross-origin"
+    });
 
     return new Response(htmlResponse.body, {
       status: 200,
