@@ -7,8 +7,6 @@ import {
   onAuthChange,
   publicDomain,
   publishStaticPage,
-  saveAllLandingPages,
-  saveLandingPage,
   signIn,
   signOut,
   signUp
@@ -412,32 +410,39 @@ export default function App() {
   async function publishPage() {
     const publishDomain = state.domain || publicDomain;
     const publishedDraft = { ...page, status: "Published", publishedUrl: `https://${publishDomain}/${page.slug}/` };
-    patch((draft) => {
-      getActivePage(draft).status = "Published";
-      getActivePage(draft).publishedUrl = publishedDraft.publishedUrl;
-    }, `Published: ${publishedDraft.publishedUrl}`);
 
-    if (isSupabaseConfigured) {
-      try {
-        if (!state.session || !state.workspace) throw new Error("Login diperlukan untuk publish ke Supabase.");
-        const html = buildStaticHtml(publishedDraft, publishDomain, state.pixelId);
-        const publishedPage = await publishStaticPage(publishedDraft, html, publishDomain, state.workspace, state.session.user);
-        setState((current) => {
-          const draft = cloneData(current);
-          const target = getActivePage(draft);
-          Object.assign(target, {
-            status: "Published",
-            publishedUrl: publishedPage.publishedUrl,
-            storagePath: publishedPage.storagePath,
-            storagePublicUrl: publishedPage.storagePublicUrl
-          });
-          draft.dbStatus = "Published to Supabase Storage";
-          draft.toast = `HTML tersimpan: ${publishedPage.storagePath}`;
-          return draft;
+    if (!isSupabaseConfigured) {
+      patch((draft) => {
+        getActivePage(draft).status = "Published";
+        getActivePage(draft).publishedUrl = publishedDraft.publishedUrl;
+      }, `Published lokal: ${publishedDraft.publishedUrl}`);
+      return;
+    }
+
+    if (!state.session || !state.workspace) {
+      setState((current) => ({ ...current, dbStatus: "Auth required", toast: "Login dulu untuk publish dan menyimpan ke Supabase." }));
+      return;
+    }
+
+    setState((current) => ({ ...current, dbStatus: "Publishing..." }));
+    try {
+      const html = buildStaticHtml(publishedDraft, publishDomain, state.pixelId);
+      const publishedPage = await publishStaticPage(publishedDraft, html, publishDomain, state.workspace, state.session.user);
+      setState((current) => {
+        const draft = cloneData(current);
+        const target = getActivePage(draft);
+        Object.assign(target, {
+          status: "Published",
+          publishedUrl: publishedPage.publishedUrl,
+          storagePath: publishedPage.storagePath,
+          storagePublicUrl: publishedPage.storagePublicUrl
         });
-      } catch (error) {
-        setState((current) => ({ ...current, dbStatus: "Supabase error", toast: error.message }));
-      }
+        draft.dbStatus = "Saved and published";
+        draft.toast = `Published & saved: ${publishedPage.publishedUrl}`;
+        return draft;
+      });
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Supabase error", toast: error.message }));
     }
   }
 
@@ -453,25 +458,6 @@ export default function App() {
     link.remove();
     URL.revokeObjectURL(url);
     setState((current) => ({ ...current, toast: "Static HTML berhasil diexport." }));
-  }
-
-  async function saveDatabase() {
-    if (!isSupabaseConfigured) {
-      setState((current) => ({ ...current, toast: "Isi .env Supabase dulu untuk mengaktifkan database." }));
-      return;
-    }
-    if (!state.session || !state.workspace) {
-      setState((current) => ({ ...current, toast: "Login dulu untuk menyimpan ke Supabase." }));
-      return;
-    }
-
-    setState((current) => ({ ...current, dbStatus: "Saving Supabase..." }));
-    try {
-      await saveAllLandingPages(state.pages, state.domain || publicDomain, state.workspace, state.session.user);
-      setState((current) => ({ ...current, dbStatus: "Synced with Supabase", toast: "Semua landing page tersimpan ke Supabase." }));
-    } catch (error) {
-      setState((current) => ({ ...current, dbStatus: "Supabase error", toast: error.message }));
-    }
   }
 
   async function handleAuthSubmit(event) {
@@ -562,9 +548,8 @@ export default function App() {
           <div className="top-actions">
             <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
             <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
-            <button className="ghost-btn" onClick={saveDatabase} title="Save pages to Supabase">Save DB</button>
             <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
-            <button className="primary-btn" onClick={publishPage} title="Publish page">Publish</button>
+            <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
             {state.session && <button className="ghost-btn" onClick={handleSignOut} title="Sign out">Logout</button>}
           </div>
         </header>
