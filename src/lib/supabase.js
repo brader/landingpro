@@ -38,6 +38,20 @@ export async function signUp(email, password) {
   return data.session;
 }
 
+export async function sendPasswordReset(email) {
+  if (!supabase) return;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin
+  });
+  if (error) throw error;
+}
+
+export async function updatePassword(password) {
+  if (!supabase) return;
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+}
+
 export async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
@@ -57,6 +71,27 @@ export async function ensureUserWorkspace(user) {
 
   if (selectError) throw selectError;
   if (existing) return existing;
+
+  const { data: membership, error: memberError } = await supabase
+    .from("workspace_members")
+    .select("workspace_id,role,created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (memberError) throw memberError;
+
+  if (membership?.workspace_id) {
+    const { data: memberWorkspace, error: workspaceError } = await supabase
+      .from("workspaces")
+      .select("*")
+      .eq("id", membership.workspace_id)
+      .single();
+
+    if (workspaceError) throw workspaceError;
+    if (memberWorkspace) return memberWorkspace;
+  }
 
   const { data: workspace, error: insertError } = await supabase
     .from("workspaces")
@@ -93,6 +128,48 @@ export async function loadWorkspacePages(workspace) {
     publishedUrl: row.published_url,
     storagePath: row.storage_path
   }));
+}
+
+export async function loadWorkspaceMembers(workspace) {
+  if (!supabase || !workspace) return [];
+
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("workspace_id,user_id,role,created_at")
+    .eq("workspace_id", workspace.id)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addWorkspaceMember(workspace, userId, role = "member") {
+  if (!supabase || !workspace || !userId) return null;
+
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .insert({
+      workspace_id: workspace.id,
+      user_id: userId,
+      role
+    })
+    .select("workspace_id,user_id,role,created_at")
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function removeWorkspaceMember(workspace, userId) {
+  if (!supabase || !workspace || !userId) return;
+
+  const { error } = await supabase
+    .from("workspace_members")
+    .delete()
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", userId);
+
+  if (error) throw error;
 }
 
 export async function saveLandingPage(page, domain, workspace, user) {

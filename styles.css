@@ -75,6 +75,10 @@ body {
   color: var(--ink);
 }
 
+.auth-actions {
+  justify-content: flex-start;
+}
+
 button,
 input,
 select,
@@ -1058,6 +1062,40 @@ button {
   height: 100%;
   border-radius: inherit;
   background: var(--blue);
+}
+
+.reset-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.user-management-card {
+  grid-column: 1 / -1;
+}
+
+.member-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fbfd;
+}
+
+.member-row p {
+  max-width: 540px;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 
 .blueprint-layout {

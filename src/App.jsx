@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  addWorkspaceMember,
   ensureUserWorkspace,
   getCurrentSession,
   isSupabaseConfigured,
+  loadWorkspaceMembers,
   loadWorkspacePages,
   onAuthChange,
   publicDomain,
   publishStaticPage,
+  removeWorkspaceMember,
+  sendPasswordReset,
   signIn,
   signOut,
-  signUp
+  signUp,
+  updatePassword
 } from "./lib/supabase.js";
 
 const storeKey = "landingpro-react-state-v1";
@@ -100,6 +105,12 @@ function initialState() {
     authMode: "login",
     authEmail: "",
     authPassword: "",
+    resetEmail: "",
+    newPassword: "",
+    confirmPassword: "",
+    memberUserId: "",
+    memberRole: "member",
+    members: [],
     session: null,
     workspace: null,
     toast: "",
@@ -134,6 +145,12 @@ function normalizeState(nextState) {
     domain: normalizedDomain,
     session: nextState.session || null,
     workspace: nextState.workspace || null,
+    resetEmail: nextState.resetEmail || "",
+    newPassword: "",
+    confirmPassword: "",
+    memberUserId: nextState.memberUserId || "",
+    memberRole: nextState.memberRole || "member",
+    members: Array.isArray(nextState.members) ? nextState.members : [],
     draggedSectionId: null,
     dropTargetId: null,
     dropPosition: null,
@@ -216,7 +233,7 @@ export default function App() {
   const activeVisitUrl = page?.slug ? `https://${activePublishDomain}/${page.slug}/` : page?.publishedUrl;
 
   useEffect(() => {
-    const persistable = { ...state, toast: "", draggedSectionId: null, dropTargetId: null, dropPosition: null, session: null, workspace: null };
+    const persistable = { ...state, toast: "", draggedSectionId: null, dropTargetId: null, dropPosition: null, session: null, workspace: null, newPassword: "", confirmPassword: "", members: [] };
     safeStorageSet(storeKey, JSON.stringify(persistable));
   }, [state]);
 
@@ -265,10 +282,12 @@ export default function App() {
   async function loadAuthenticatedWorkspace(session) {
     const workspace = await ensureUserWorkspace(session.user);
     const dbPages = await loadWorkspacePages(workspace);
+    const members = await loadWorkspaceMembers(workspace);
     setState((current) => normalizeState({
       ...current,
       session,
       workspace,
+      members,
       pages: dbPages.length ? dbPages : current.pages,
       activePageId: dbPages.length ? dbPages[0].id : current.activePageId,
       selectedSectionId: dbPages.length ? dbPages[0].sections?.[0]?.id || null : current.selectedSectionId,
@@ -466,6 +485,23 @@ export default function App() {
   async function handleAuthSubmit(event) {
     event.preventDefault();
     if (!isSupabaseConfigured) return;
+
+    if (state.authMode === "forgot") {
+      const email = state.resetEmail || state.authEmail;
+      if (!email) {
+        setState((current) => ({ ...current, toast: "Isi email untuk menerima link reset password." }));
+        return;
+      }
+      setState((current) => ({ ...current, dbStatus: "Sending reset link..." }));
+      try {
+        await sendPasswordReset(email);
+        setState((current) => ({ ...current, dbStatus: "Reset email sent", toast: "Link reset password sudah dikirim ke email." }));
+      } catch (error) {
+        setState((current) => ({ ...current, dbStatus: "Auth error", toast: error.message }));
+      }
+      return;
+    }
+
     setState((current) => ({ ...current, dbStatus: "Authenticating..." }));
     try {
       const session = state.authMode === "login"
@@ -487,6 +523,76 @@ export default function App() {
       setState((current) => ({ ...current, session: null, workspace: null, dbStatus: "Auth required", toast: "Berhasil logout." }));
     } catch (error) {
       setState((current) => ({ ...current, toast: error.message }));
+    }
+  }
+
+  async function handleChangePassword(event) {
+    event.preventDefault();
+    if (state.newPassword.length < 6) {
+      setState((current) => ({ ...current, toast: "Password minimal 6 karakter." }));
+      return;
+    }
+    if (state.newPassword !== state.confirmPassword) {
+      setState((current) => ({ ...current, toast: "Konfirmasi password belum sama." }));
+      return;
+    }
+
+    setState((current) => ({ ...current, dbStatus: "Updating password..." }));
+    try {
+      await updatePassword(state.newPassword);
+      setState((current) => ({ ...current, newPassword: "", confirmPassword: "", dbStatus: "Password updated", toast: "Password berhasil diganti." }));
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Auth error", toast: error.message }));
+    }
+  }
+
+  async function handleSendResetPassword(event) {
+    event.preventDefault();
+    const email = state.resetEmail || state.session?.user?.email;
+    if (!email) {
+      setState((current) => ({ ...current, toast: "Isi email untuk menerima link reset password." }));
+      return;
+    }
+    setState((current) => ({ ...current, dbStatus: "Sending reset link..." }));
+    try {
+      await sendPasswordReset(email);
+      setState((current) => ({ ...current, dbStatus: "Reset email sent", toast: "Link reset password sudah dikirim." }));
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Auth error", toast: error.message }));
+    }
+  }
+
+  async function refreshMembers(workspace = state.workspace) {
+    if (!workspace) return;
+    const members = await loadWorkspaceMembers(workspace);
+    setState((current) => ({ ...current, members }));
+  }
+
+  async function handleAddMember(event) {
+    event.preventDefault();
+    if (!state.workspace || !state.memberUserId) {
+      setState((current) => ({ ...current, toast: "Isi User ID Supabase member." }));
+      return;
+    }
+    setState((current) => ({ ...current, dbStatus: "Adding member..." }));
+    try {
+      await addWorkspaceMember(state.workspace, state.memberUserId.trim(), state.memberRole);
+      await refreshMembers();
+      setState((current) => ({ ...current, memberUserId: "", dbStatus: "Member added", toast: "Member berhasil ditambahkan." }));
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Member error", toast: error.message }));
+    }
+  }
+
+  async function handleRemoveMember(userId) {
+    if (!state.workspace || userId === state.session?.user?.id) return;
+    setState((current) => ({ ...current, dbStatus: "Removing member..." }));
+    try {
+      await removeWorkspaceMember(state.workspace, userId);
+      await refreshMembers();
+      setState((current) => ({ ...current, dbStatus: "Member removed", toast: "Member berhasil dihapus." }));
+    } catch (error) {
+      setState((current) => ({ ...current, dbStatus: "Member error", toast: error.message }));
     }
   }
 
@@ -586,7 +692,16 @@ export default function App() {
           />
         )}
         {state.activeView === "analytics" && <Analytics state={state} setState={setState} />}
-        {state.activeView === "settings" && <Settings state={state} setState={setState} />}
+        {state.activeView === "settings" && (
+          <Settings
+            state={state}
+            setState={setState}
+            onChangePassword={handleChangePassword}
+            onSendResetPassword={handleSendResetPassword}
+            onAddMember={handleAddMember}
+            onRemoveMember={handleRemoveMember}
+          />
+        )}
         {state.activeView === "blueprint" && <Blueprint />}
       </main>
       <div className={`toast ${state.toast ? "is-visible" : ""}`} role="status" aria-live="polite">{state.toast}</div>
@@ -679,6 +794,7 @@ function Templates({ addPage }) {
 
 function AuthScreen({ state, setState, onSubmit }) {
   const isLogin = state.authMode === "login";
+  const isForgot = state.authMode === "forgot";
   return (
     <main className="auth-screen">
       <section className="auth-panel">
@@ -691,23 +807,37 @@ function AuthScreen({ state, setState, onSubmit }) {
         </div>
         <div>
           <p className="eyebrow">Supabase Auth</p>
-          <h1>{isLogin ? "Login builder" : "Buat akun builder"}</h1>
-          <p className="muted">Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage.</p>
+          <h1>{isForgot ? "Reset password" : isLogin ? "Login builder" : "Buat akun builder"}</h1>
+          <p className="muted">{isForgot ? "Kirim link reset password ke email akun builder." : "Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage."}</p>
         </div>
         <form className="form-grid" onSubmit={onSubmit}>
-          <TextField label="Email" value={state.authEmail} onChange={(value) => setState((current) => ({ ...current, authEmail: value }))} />
-          <div className="field">
-            <label>Password</label>
-            <input type="password" value={state.authPassword} onChange={(event) => setState((current) => ({ ...current, authPassword: event.target.value }))} />
-          </div>
-          <button className="primary-btn" type="submit">{isLogin ? "Login" : "Register"}</button>
+          <TextField
+            label="Email"
+            value={isForgot ? state.resetEmail : state.authEmail}
+            onChange={(value) => setState((current) => isForgot ? { ...current, resetEmail: value } : { ...current, authEmail: value })}
+          />
+          {!isForgot && (
+            <div className="field">
+              <label>Password</label>
+              <input type="password" value={state.authPassword} onChange={(event) => setState((current) => ({ ...current, authPassword: event.target.value }))} />
+            </div>
+          )}
+          <button className="primary-btn" type="submit">{isForgot ? "Kirim Link Reset" : isLogin ? "Login" : "Register"}</button>
         </form>
-        <button
-          className="ghost-btn"
-          onClick={() => setState((current) => ({ ...current, authMode: isLogin ? "register" : "login" }))}
-        >
-          {isLogin ? "Buat akun baru" : "Saya sudah punya akun"}
-        </button>
+        <div className="row-actions auth-actions">
+          <button
+            className="ghost-btn"
+            onClick={() => setState((current) => ({ ...current, authMode: isLogin ? "register" : "login" }))}
+          >
+            {isLogin ? "Buat akun baru" : "Saya sudah punya akun"}
+          </button>
+          <button
+            className="ghost-btn"
+            onClick={() => setState((current) => ({ ...current, authMode: isForgot ? "login" : "forgot", resetEmail: current.resetEmail || current.authEmail }))}
+          >
+            {isForgot ? "Kembali login" : "Lupa password"}
+          </button>
+        </div>
         <p className="muted">Status: {state.dbStatus}</p>
       </section>
     </main>
@@ -1183,7 +1313,9 @@ function Analytics({ state, setState }) {
   );
 }
 
-function Settings({ state, setState }) {
+function Settings({ state, setState, onChangePassword, onSendResetPassword, onAddMember, onRemoveMember }) {
+  const isOwner = state.workspace?.owner_id === state.session?.user?.id;
+
   return (
     <div className="grid cols-2">
       <article className="card">
@@ -1200,6 +1332,60 @@ function Settings({ state, setState }) {
         <p className="muted">Arahkan <strong>{state.domain || publicDomain}</strong> ke Cloudflare Worker publish. Setelah itu semua page akan hidup di format berikut:</p>
         <p><strong>https://{state.domain || publicDomain}/nama-slug/</strong></p>
         <p className="muted">Tidak perlu Cloudflare for SaaS atau custom hostname per user untuk penggunaan internal.</p>
+      </article>
+      <article className="card">
+        <h2>Account security</h2>
+        <p className="muted">Login sebagai <strong>{state.session?.user?.email || "user"}</strong>.</p>
+        <form className="form-grid" onSubmit={onChangePassword}>
+          <div className="field">
+            <label>Password baru</label>
+            <input type="password" value={state.newPassword} onChange={(event) => setState((current) => ({ ...current, newPassword: event.target.value }))} />
+          </div>
+          <div className="field">
+            <label>Konfirmasi password</label>
+            <input type="password" value={state.confirmPassword} onChange={(event) => setState((current) => ({ ...current, confirmPassword: event.target.value }))} />
+          </div>
+          <button className="primary-btn" type="submit">Ganti Password</button>
+        </form>
+        <form className="form-grid reset-form" onSubmit={onSendResetPassword}>
+          <TextField label="Email reset password" value={state.resetEmail || state.session?.user?.email || ""} onChange={(value) => setState((current) => ({ ...current, resetEmail: value }))} />
+          <button className="ghost-btn" type="submit">Kirim Link Reset Password</button>
+        </form>
+      </article>
+      <article className="card user-management-card">
+        <h2>User management</h2>
+        <p className="muted">Kelola member workspace internal. Untuk menambahkan user, user tersebut perlu register dulu lalu copy User ID Supabase-nya.</p>
+        <div className="member-list">
+          {(state.members || []).map((member) => (
+            <div className="member-row" key={member.user_id}>
+              <div>
+                <strong>{member.user_id === state.session?.user?.id ? "You" : "Member"}</strong>
+                <p className="muted">{member.user_id}</p>
+              </div>
+              <div className="row-actions">
+                <span className="status">{member.role}</span>
+                {isOwner && member.user_id !== state.session?.user?.id && (
+                  <button className="tiny-btn danger-btn" onClick={() => onRemoveMember(member.user_id)}>Remove</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {isOwner ? (
+          <form className="form-grid" onSubmit={onAddMember}>
+            <TextField label="User ID Supabase" value={state.memberUserId} onChange={(value) => setState((current) => ({ ...current, memberUserId: value }))} />
+            <div className="field">
+              <label>Role</label>
+              <select value={state.memberRole} onChange={(event) => setState((current) => ({ ...current, memberRole: event.target.value }))}>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button className="primary-btn" type="submit">Tambah Member</button>
+          </form>
+        ) : (
+          <p className="muted">Hanya owner workspace yang bisa menambahkan atau menghapus member.</p>
+        )}
       </article>
     </div>
   );

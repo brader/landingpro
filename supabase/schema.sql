@@ -112,6 +112,28 @@ create trigger workspaces_add_owner_member
 after insert on workspaces
 for each row execute function add_workspace_owner_member();
 
+create or replace function is_workspace_member(workspace_id_input uuid)
+returns boolean as $$
+begin
+  return exists (
+    select 1 from workspace_members
+    where workspace_members.workspace_id = workspace_id_input
+      and workspace_members.user_id = auth.uid()
+  );
+end;
+$$ language plpgsql security definer;
+
+create or replace function is_workspace_owner(workspace_id_input uuid)
+returns boolean as $$
+begin
+  return exists (
+    select 1 from workspaces
+    where workspaces.id = workspace_id_input
+      and workspaces.owner_id = auth.uid()
+  );
+end;
+$$ language plpgsql security definer;
+
 alter table workspaces enable row level security;
 alter table workspace_members enable row level security;
 alter table landing_pages enable row level security;
@@ -122,7 +144,10 @@ drop policy if exists "workspaces owner select" on workspaces;
 create policy "workspaces owner select"
 on workspaces for select
 to authenticated
-using (owner_id = auth.uid());
+using (
+  owner_id = auth.uid()
+  or is_workspace_member(workspaces.id)
+);
 
 drop policy if exists "workspaces owner insert" on workspaces;
 create policy "workspaces owner insert"
@@ -138,10 +163,31 @@ using (owner_id = auth.uid())
 with check (owner_id = auth.uid());
 
 drop policy if exists "workspace_members self select" on workspace_members;
-create policy "workspace_members self select"
+drop policy if exists "workspace_members workspace select" on workspace_members;
+create policy "workspace_members workspace select"
 on workspace_members for select
 to authenticated
-using (user_id = auth.uid());
+using (
+  user_id = auth.uid()
+  or is_workspace_member(workspace_members.workspace_id)
+);
+
+drop policy if exists "workspace_members owner insert" on workspace_members;
+create policy "workspace_members owner insert"
+on workspace_members for insert
+to authenticated
+with check (
+  is_workspace_owner(workspace_members.workspace_id)
+);
+
+drop policy if exists "workspace_members owner delete" on workspace_members;
+create policy "workspace_members owner delete"
+on workspace_members for delete
+to authenticated
+using (
+  is_workspace_owner(workspace_members.workspace_id)
+  and workspace_members.user_id <> auth.uid()
+);
 
 drop policy if exists "landing_pages anon all" on landing_pages;
 drop policy if exists "landing_pages owner all" on landing_pages;
