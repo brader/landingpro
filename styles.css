@@ -323,6 +323,7 @@ button {
   background: #fff;
   color: var(--ink);
   font-weight: 750;
+  text-decoration: none;
 }
 
 .primary-btn {
@@ -698,6 +699,68 @@ button {
 
 .field input[type="file"] {
   padding: 8px;
+}
+
+.rich-field {
+  gap: 8px;
+}
+
+.rich-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rich-toolbar button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.rich-toolbar button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.rich-editor {
+  min-height: 112px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  line-height: 1.55;
+  outline: none;
+}
+
+.rich-editor:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.12);
+}
+
+.rich-text {
+  line-height: 1.55;
+}
+
+.rich-text ul,
+.rich-text ol,
+.rich-editor ul,
+.rich-editor ol {
+  margin: 8px 0 14px;
+  padding-left: 22px;
+}
+
+.rich-text a,
+.rich-editor a {
+  color: inherit;
+  text-decoration: underline;
 }
 
 .field-help {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ensureUserWorkspace,
   getCurrentSession,
@@ -40,8 +40,8 @@ const sectionDefaults = {
   text: { body: "Tulis paragraf pendek yang mudah discan oleh traffic mobile dari iklan Meta." },
   bulletList: { title: "Benefit utama", items: "Cepat dipahami|Mobile-first|CTA jelas", icon: "✓" },
   divider: { body: "", thickness: 1, dividerStyle: "solid" },
-  button: { cta: "Klik Sekarang", link: "#offer", icon: "→" },
-  whatsappButton: { cta: "Chat WhatsApp", phone: "6281234567890", message: "Halo, saya tertarik dengan promo ini.", icon: "☎" },
+  button: { cta: "Klik Sekarang", link: "#offer", icon: "→", sticky: false },
+  whatsappButton: { cta: "Chat WhatsApp", phone: "6281234567890", message: "Halo, saya tertarik dengan promo ini.", icon: "☎", sticky: false },
   htmlCode: { body: "<div style=\"padding:12px;border:1px solid #ddd;border-radius:8px\">Custom HTML</div>" }
 };
 
@@ -491,7 +491,7 @@ export default function App() {
     dashboard: "Dashboard",
     pages: "Landing Pages",
     templates: "Template Gallery",
-    editor: "Elementor-like Builder",
+    editor: "Editor",
     analytics: "Analytics",
     settings: "Domain & Settings",
     blueprint: "Product Blueprint"
@@ -548,6 +548,9 @@ export default function App() {
           <div className="top-actions">
             <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
             <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
+            {page.status === "Published" && page.publishedUrl && (
+              <a className="ghost-btn" href={page.publishedUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Site</a>
+            )}
             <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
             <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
             {state.session && <button className="ghost-btn" onClick={handleSignOut} title="Sign out">Logout</button>}
@@ -956,8 +959,8 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
       <div className="form-grid">
         {selected.type === "header" && (
           <>
-            <TextField label="Judul" value={selected.title} onChange={(value) => updateSelectedSection("title", value)} />
-            <TextField label="Subjudul" textarea value={selected.body} onChange={(value) => updateSelectedSection("body", value)} />
+            <RichTextEditor label="Judul" value={selected.title} onChange={(value) => updateSelectedSection("title", value)} />
+            <RichTextEditor label="Subjudul" value={selected.body} onChange={(value) => updateSelectedSection("body", value)} />
             <div className="field">
               <label>Level heading</label>
               <select value={selected.level} onChange={(event) => updateSelectedSection("level", event.target.value)}>
@@ -985,7 +988,7 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
             {selected.optimizedInfo && <p className="field-help">{selected.optimizedInfo}</p>}
           </>
         )}
-        {selected.type === "text" && <TextField label="Teks" textarea value={selected.body} onChange={(value) => updateSelectedSection("body", value)} />}
+        {selected.type === "text" && <RichTextEditor label="Teks" value={selected.body} onChange={(value) => updateSelectedSection("body", value)} />}
         {selected.type === "bulletList" && (
           <>
             <TextField label="Judul list" value={selected.title} onChange={(value) => updateSelectedSection("title", value)} />
@@ -1011,6 +1014,10 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
             <TextField label="Teks tombol" value={selected.cta} onChange={(value) => updateSelectedSection("cta", value)} />
             <TextField label="Icon tombol" value={selected.icon} onChange={(value) => updateSelectedSection("icon", value)} />
             <TextField label="Link" value={selected.link} onChange={(value) => updateSelectedSection("link", value)} />
+            <label className="toggle-row">
+              <input type="checkbox" checked={Boolean(selected.sticky)} onChange={(event) => updateSelectedSection("sticky", event.target.checked)} />
+              <span>Jadikan sticky button</span>
+            </label>
           </>
         )}
         {selected.type === "whatsappButton" && (
@@ -1019,6 +1026,10 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
             <TextField label="Icon tombol" value={selected.icon} onChange={(value) => updateSelectedSection("icon", value)} />
             <TextField label="Nomor WhatsApp" value={selected.phone} onChange={(value) => updateSelectedSection("phone", value)} />
             <TextField label="Pesan awal" textarea value={selected.message} onChange={(value) => updateSelectedSection("message", value)} />
+            <label className="toggle-row">
+              <input type="checkbox" checked={Boolean(selected.sticky)} onChange={(event) => updateSelectedSection("sticky", event.target.checked)} />
+              <span>Jadikan sticky WhatsApp button</span>
+            </label>
           </>
         )}
         {selected.type === "htmlCode" && <TextField label="HTML code" textarea value={selected.body} onChange={(value) => updateSelectedSection("body", value)} />}
@@ -1028,7 +1039,7 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
 }
 
 function LandingPreview({ page, previewMode, selectedId, onSelect, cloneSection, deleteSection, toggleHidden, addSection }) {
-  const sticky = page.sections.find((section) => section.type === "whatsappButton" && !section.style.hidden);
+  const sticky = page.sections.find((section) => isStickyButton(section) && !section.style.hidden);
   return (
     <article
       className={`landing-preview ${previewMode}`}
@@ -1050,7 +1061,7 @@ function LandingPreview({ page, previewMode, selectedId, onSelect, cloneSection,
       ))}
       {sticky && (
         <div className="sticky-cta">
-          <a className="lp-button" style={{ background: sticky.style.accentColor }} href={whatsappHref(sticky)} onClick={(event) => event.preventDefault()}>{sticky.icon} {sticky.cta}</a>
+          <a className={`lp-button ${sticky.type === "whatsappButton" ? "whatsapp-widget" : ""}`} style={{ background: sticky.style.accentColor }} href={buttonHref(sticky)} onClick={(event) => event.preventDefault()}>{sticky.icon} {sticky.cta}</a>
         </div>
       )}
     </article>
@@ -1102,8 +1113,8 @@ function LandingSection({ section, selected, onSelect, cloneSection, deleteSecti
       {toolbar}
       {section.type === "header" && (
         <>
-          <HeadingTag>{section.title}</HeadingTag>
-          <p>{section.body}</p>
+          <HeadingTag dangerouslySetInnerHTML={{ __html: richHtml(section.title) }}></HeadingTag>
+          <div className="rich-text" dangerouslySetInnerHTML={{ __html: richHtml(section.body) }}></div>
         </>
       )}
       {section.type === "image" && (
@@ -1112,7 +1123,7 @@ function LandingSection({ section, selected, onSelect, cloneSection, deleteSecti
           {section.caption && <figcaption>{section.caption}</figcaption>}
         </figure>
       )}
-      {section.type === "text" && <p className="text-widget">{section.body}</p>}
+      {section.type === "text" && <div className="text-widget rich-text" dangerouslySetInnerHTML={{ __html: richHtml(section.body) }}></div>}
       {section.type === "bulletList" && (
         <>
           <h2>{section.title}</h2>
@@ -1240,6 +1251,50 @@ function ImageUploadField({ onUpload }) {
   );
 }
 
+function RichTextEditor({ label, value, onChange }) {
+  const editorRef = useRef(null);
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== (value || "")) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  function runCommand(command, commandValue = null) {
+    editorRef.current?.focus();
+    document.execCommand(command, false, commandValue);
+    onChange(editorRef.current?.innerHTML || "");
+  }
+
+  function addLink() {
+    const url = window.prompt("Masukkan URL");
+    if (!url) return;
+    runCommand("createLink", url);
+  }
+
+  return (
+    <div className="field rich-field">
+      <label>{label}</label>
+      <div className="rich-toolbar" aria-label={`${label} formatting`}>
+        <button type="button" title="Bold" onClick={() => runCommand("bold")}>B</button>
+        <button type="button" title="Italic" onClick={() => runCommand("italic")}><em>I</em></button>
+        <button type="button" title="Underline" onClick={() => runCommand("underline")}><u>U</u></button>
+        <button type="button" title="Bullet list" onClick={() => runCommand("insertUnorderedList")}>•</button>
+        <button type="button" title="Link" onClick={addLink}>Link</button>
+        <button type="button" title="Clear formatting" onClick={() => runCommand("removeFormat")}>Tx</button>
+      </div>
+      <div
+        ref={editorRef}
+        className="rich-editor"
+        contentEditable
+        suppressContentEditableWarning
+        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+        onBlur={(event) => onChange(event.currentTarget.innerHTML)}
+      />
+    </div>
+  );
+}
+
 function TextField({ label, value, onChange, textarea = false }) {
   return (
     <div className="field">
@@ -1320,6 +1375,28 @@ function whatsappHref(section) {
   const phone = String(section.phone || "").replace(/\D/g, "");
   const message = encodeURIComponent(section.message || "");
   return `https://wa.me/${phone}${message ? `?text=${message}` : ""}`;
+}
+
+function buttonHref(section) {
+  return section.type === "whatsappButton" ? whatsappHref(section) : section.link || "#";
+}
+
+function isStickyButton(section) {
+  return Boolean(section?.sticky && ["button", "whatsappButton"].includes(section.type));
+}
+
+function richHtml(value) {
+  const raw = String(value || "");
+  const html = /<\/?[a-z][\s\S]*>/i.test(raw) ? raw : escapeHtml(raw);
+  return sanitizeRichHtml(html);
+}
+
+function sanitizeRichHtml(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .replace(/javascript:/gi, "");
 }
 
 function hasDraggedWidget(event) {
@@ -1403,6 +1480,9 @@ function safeStorageSet(key, value) {
 }
 
 function buildStaticHtml(page, domain, pixelId) {
+  const visibleSections = page.sections.filter((section) => !section.style.hidden);
+  const sticky = visibleSections.find(isStickyButton);
+
   return `<!doctype html>
 <html lang="id">
   <head>
@@ -1415,8 +1495,9 @@ function buildStaticHtml(page, domain, pixelId) {
   </head>
   <body>
     <main class="landing-page" data-domain="${escapeAttr(domain)}">
-      ${page.sections.filter((section) => !section.style.hidden).map(renderStaticSection).join("\n")}
+      ${visibleSections.map(renderStaticSection).join("\n")}
     </main>
+    ${sticky ? renderStaticSticky(sticky) : ""}
     <script>
       document.querySelectorAll('[data-track]').forEach(function(el){el.addEventListener('click',function(){window.fbq&&fbq('track',el.dataset.track);});});
     </script>
@@ -1428,7 +1509,7 @@ function renderStaticSection(section) {
   const style = `background:${escapeAttr(section.style.background)};color:${escapeAttr(section.style.textColor)};text-align:${escapeAttr(section.style.align)};padding:${Number(section.style.padding)}px 22px`;
   if (section.type === "header") {
     const tag = ["h1", "h2", "h3"].includes(section.level) ? section.level : "h1";
-    return `<section class="lp-section lp-hero" style="${style}"><${tag}>${escapeHtml(section.title)}</${tag}><p>${escapeHtml(section.body)}</p></section>`;
+    return `<section class="lp-section lp-hero" style="${style}"><${tag}>${richHtml(section.title)}</${tag}><div class="rich-text">${richHtml(section.body)}</div></section>`;
   }
   if (section.type === "image") {
     const media = section.src
@@ -1437,7 +1518,7 @@ function renderStaticSection(section) {
     return `<section class="lp-section" style="${style}"><figure class="image-widget" style="width:${Number(section.imageSize || 100)}%">${media}${section.caption ? `<figcaption>${escapeHtml(section.caption)}</figcaption>` : ""}</figure></section>`;
   }
   if (section.type === "text") {
-    return `<section class="lp-section" style="${style}"><p class="text-widget">${escapeHtml(section.body)}</p></section>`;
+    return `<section class="lp-section" style="${style}"><div class="text-widget rich-text">${richHtml(section.body)}</div></section>`;
   }
   if (section.type === "bulletList") {
     return `<section class="lp-section" style="${style}"><h2>${escapeHtml(section.title)}</h2><div class="benefit-list">${splitItems(section.items).map((item) => `<div class="benefit-item bullet-item" style="border-radius:${Number(section.style.radius)}px"><span>${escapeHtml(section.icon)}</span><strong>${escapeHtml(item)}</strong></div>`).join("")}</div></section>`;
@@ -1457,8 +1538,13 @@ function renderStaticSection(section) {
   return `<section class="lp-section" style="${style}"><p>${escapeHtml(section.body || "")}</p></section>`;
 }
 
+function renderStaticSticky(section) {
+  const className = section.type === "whatsappButton" ? "lp-button whatsapp-widget" : "lp-button";
+  return `<div class="sticky-cta"><a class="${className}" style="background:${escapeAttr(section.style.accentColor)}" data-track="${section.type === "whatsappButton" ? "Contact" : "Lead"}" href="${escapeAttr(buttonHref(section))}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></div>`;
+}
+
 function publishedCss() {
-  return `*{box-sizing:border-box}body{margin:0;background:#eef3f7;color:#17202a;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.landing-page{max-width:480px;margin:0 auto;background:#fff;min-height:100vh}.lp-section{border-bottom:1px solid #edf2f5}.lp-section h1,.lp-section h2,.lp-section h3{margin:0 0 10px;line-height:1.12}.lp-section h1{font-size:32px}.lp-section h2{font-size:26px}.lp-section h3{font-size:22px}.lp-section p{margin:0 0 14px;line-height:1.55}.lp-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border:0;border-radius:8px;padding:10px 14px;color:#fff;text-decoration:none;font-weight:800}.lp-media{min-height:170px;background:linear-gradient(135deg,rgba(15,159,122,.2),rgba(47,111,237,.2)),linear-gradient(45deg,#dfe7ee,#fff);border:1px solid rgba(255,255,255,.25)}.image-widget{margin:0;max-width:100%}.image-widget img{display:block;width:100%;height:auto}.image-widget figcaption{margin-top:8px;color:#627081;font-size:13px}.text-widget{font-size:16px}.benefit-list{display:grid;gap:10px}.benefit-item{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e3ebf1;background:#f9fbfd}.divider-widget{width:100%}.whatsapp-widget{background:#16a34a!important}.html-widget{max-width:100%;overflow:auto}@media(min-width:760px){.landing-page{max-width:920px}.lp-section{padding-left:44px!important;padding-right:44px!important}}`;
+  return `*{box-sizing:border-box}body{margin:0;background:#eef3f7;color:#17202a;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.landing-page{max-width:480px;margin:0 auto;background:#fff;min-height:100vh}.lp-section{border-bottom:1px solid #edf2f5}.lp-section h1,.lp-section h2,.lp-section h3{margin:0 0 10px;line-height:1.12}.lp-section h1{font-size:32px}.lp-section h2{font-size:26px}.lp-section h3{font-size:22px}.lp-section p,.rich-text{margin:0 0 14px;line-height:1.55}.rich-text ul,.rich-text ol{margin:8px 0 14px;padding-left:22px}.rich-text a{color:inherit;text-decoration:underline}.lp-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;border:0;border-radius:8px;padding:10px 14px;color:#fff;text-decoration:none;font-weight:800}.lp-media{min-height:170px;background:linear-gradient(135deg,rgba(15,159,122,.2),rgba(47,111,237,.2)),linear-gradient(45deg,#dfe7ee,#fff);border:1px solid rgba(255,255,255,.25)}.image-widget{margin:0;max-width:100%}.image-widget img{display:block;width:100%;height:auto}.image-widget figcaption{margin-top:8px;color:#627081;font-size:13px}.text-widget{font-size:16px}.benefit-list{display:grid;gap:10px}.benefit-item{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid #e3ebf1;background:#f9fbfd}.divider-widget{width:100%}.whatsapp-widget{background:#16a34a!important}.html-widget{max-width:100%;overflow:auto}.sticky-cta{position:fixed;z-index:20;left:50%;right:auto;bottom:0;width:min(480px,100%);transform:translateX(-50%);display:grid;padding:10px;background:rgba(255,255,255,.94);box-shadow:0 -12px 26px rgba(23,32,42,.12);backdrop-filter:blur(12px)}.sticky-cta .lp-button{width:100%}@media(min-width:760px){.landing-page{max-width:920px}.lp-section{padding-left:44px!important;padding-right:44px!important}.sticky-cta{width:min(920px,100%)}}`;
 }
 
 function escapeHtml(value) {
