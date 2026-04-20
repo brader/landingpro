@@ -1280,6 +1280,10 @@ function RichTextEditor({ label, value, onChange }) {
         <button type="button" title="Italic" onClick={() => runCommand("italic")}><em>I</em></button>
         <button type="button" title="Underline" onClick={() => runCommand("underline")}><u>U</u></button>
         <button type="button" title="Bullet list" onClick={() => runCommand("insertUnorderedList")}>•</button>
+        <button type="button" title="Align left" onClick={() => runCommand("justifyLeft")}>Left</button>
+        <button type="button" title="Align center" onClick={() => runCommand("justifyCenter")}>Center</button>
+        <button type="button" title="Align right" onClick={() => runCommand("justifyRight")}>Right</button>
+        <button type="button" title="Justify" onClick={() => runCommand("justifyFull")}>Justify</button>
         <button type="button" title="Link" onClick={addLink}>Link</button>
         <button type="button" title="Clear formatting" onClick={() => runCommand("removeFormat")}>Tx</button>
       </div>
