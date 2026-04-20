@@ -79,6 +79,16 @@ body {
   justify-content: flex-start;
 }
 
+.auth-confirmation {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #b7ebd4;
+  border-radius: 8px;
+  background: #eefbf6;
+  color: #0b5f49;
+}
+
 button,
 input,
 select,

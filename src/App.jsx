@@ -106,6 +106,7 @@ function initialState() {
     domain: publicDomain,
     dbStatus: isSupabaseConfigured ? "Supabase ready" : "Local only",
     authMode: inviteEmail ? "register" : "login",
+    authBusy: false,
     authEmail: inviteEmail,
     authPassword: "",
     resetEmail: inviteEmail,
@@ -151,6 +152,7 @@ function normalizeState(nextState) {
     session: nextState.session || null,
     workspace: nextState.workspace || null,
     authMode: inviteEmail ? "register" : nextState.authMode || "login",
+    authBusy: false,
     authEmail: inviteEmail || nextState.authEmail || "",
     resetEmail: nextState.resetEmail || "",
     newPassword: "",
@@ -494,7 +496,7 @@ export default function App() {
 
   async function handleAuthSubmit(event) {
     event.preventDefault();
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured || state.authBusy) return;
 
     if (state.authMode === "forgot") {
       const email = state.resetEmail || state.authEmail;
@@ -502,17 +504,17 @@ export default function App() {
         setState((current) => ({ ...current, toast: "Isi email untuk menerima link reset password." }));
         return;
       }
-      setState((current) => ({ ...current, dbStatus: "Sending reset link..." }));
+      setState((current) => ({ ...current, authBusy: true, dbStatus: "Sending reset link..." }));
       try {
         await sendPasswordReset(email);
-        setState((current) => ({ ...current, dbStatus: "Reset email sent", toast: "Link reset password sudah dikirim ke email." }));
+        setState((current) => ({ ...current, authBusy: false, dbStatus: "Reset email sent", toast: "Link reset password sudah dikirim ke email." }));
       } catch (error) {
-        setState((current) => ({ ...current, dbStatus: "Auth error", toast: error.message }));
+        setState((current) => ({ ...current, authBusy: false, dbStatus: "Auth error", toast: error.message }));
       }
       return;
     }
 
-    setState((current) => ({ ...current, dbStatus: "Authenticating..." }));
+    setState((current) => ({ ...current, authBusy: true, dbStatus: "Authenticating..." }));
     try {
       const session = state.authMode === "login"
         ? await signIn(state.authEmail, state.authPassword)
@@ -520,10 +522,10 @@ export default function App() {
       if (session) {
         await loadAuthenticatedWorkspace(session);
       } else {
-        setState((current) => ({ ...current, dbStatus: "Check email", toast: "Cek email untuk konfirmasi akun Supabase." }));
+        setState((current) => ({ ...current, authBusy: false, authMode: "registered", dbStatus: "Check email", toast: "Cek email untuk konfirmasi akun Supabase." }));
       }
     } catch (error) {
-      setState((current) => ({ ...current, dbStatus: "Auth error", toast: error.message }));
+      setState((current) => ({ ...current, authBusy: false, dbStatus: "Auth error", toast: error.message }));
     }
   }
 
@@ -821,6 +823,7 @@ function Templates({ addPage }) {
 function AuthScreen({ state, setState, onSubmit }) {
   const isLogin = state.authMode === "login";
   const isForgot = state.authMode === "forgot";
+  const isRegistered = state.authMode === "registered";
   const hasInvite = Boolean(getInviteEmailFromUrl());
   return (
     <main className="auth-screen">
@@ -834,36 +837,45 @@ function AuthScreen({ state, setState, onSubmit }) {
         </div>
         <div>
           <p className="eyebrow">Supabase Auth</p>
-          <h1>{isForgot ? "Reset password" : isLogin ? "Login builder" : "Buat akun builder"}</h1>
-          <p className="muted">{hasInvite ? "Email kamu sudah diundang. Register atau login memakai email ini untuk masuk workspace tim." : isForgot ? "Kirim link reset password ke email akun builder." : "Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage."}</p>
+          <h1>{isRegistered ? "Cek email kamu" : isForgot ? "Reset password" : isLogin ? "Login builder" : "Buat akun builder"}</h1>
+          <p className="muted">{isRegistered ? `Kami sudah membuat permintaan akun untuk ${state.authEmail}. Buka email dari Supabase, klik link konfirmasi, lalu kembali login.` : hasInvite ? "Email kamu sudah diundang. Register atau login memakai email ini untuk masuk workspace tim." : isForgot ? "Kirim link reset password ke email akun builder." : "Masuk untuk menyimpan landing page, mengaktifkan RLS per user, dan publish HTML statis ke Storage."}</p>
         </div>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <TextField
-            label="Email"
-            value={isForgot ? state.resetEmail : state.authEmail}
-            onChange={(value) => setState((current) => isForgot ? { ...current, resetEmail: value } : { ...current, authEmail: value })}
-          />
-          {!isForgot && (
-            <div className="field">
-              <label>Password</label>
-              <input type="password" value={state.authPassword} onChange={(event) => setState((current) => ({ ...current, authPassword: event.target.value }))} />
-            </div>
-          )}
-          <button className="primary-btn" type="submit">{isForgot ? "Kirim Link Reset" : isLogin ? "Login" : "Register"}</button>
-        </form>
+        {isRegistered ? (
+          <div className="auth-confirmation">
+            <strong>{state.authEmail}</strong>
+            <p className="muted">Kalau email belum terlihat, cek folder spam atau promotion. Setelah konfirmasi, gunakan tombol login di bawah.</p>
+          </div>
+        ) : (
+          <form className="form-grid" onSubmit={onSubmit}>
+            <TextField
+              label="Email"
+              value={isForgot ? state.resetEmail : state.authEmail}
+              onChange={(value) => setState((current) => isForgot ? { ...current, resetEmail: value } : { ...current, authEmail: value })}
+            />
+            {!isForgot && (
+              <div className="field">
+                <label>Password</label>
+                <input type="password" value={state.authPassword} onChange={(event) => setState((current) => ({ ...current, authPassword: event.target.value }))} />
+              </div>
+            )}
+            <button className="primary-btn" type="submit" disabled={state.authBusy}>{state.authBusy ? "Processing..." : isForgot ? "Kirim Link Reset" : isLogin ? "Login" : "Register"}</button>
+          </form>
+        )}
         <div className="row-actions auth-actions">
           <button
             className="ghost-btn"
-            onClick={() => setState((current) => ({ ...current, authMode: isLogin ? "register" : "login" }))}
+            onClick={() => setState((current) => ({ ...current, authBusy: false, authMode: isLogin ? "register" : "login" }))}
           >
             {isLogin ? "Buat akun baru" : "Saya sudah punya akun"}
           </button>
-          <button
-            className="ghost-btn"
-            onClick={() => setState((current) => ({ ...current, authMode: isForgot ? "login" : "forgot", resetEmail: current.resetEmail || current.authEmail }))}
-          >
-            {isForgot ? "Kembali login" : "Lupa password"}
-          </button>
+          {!isRegistered && (
+            <button
+              className="ghost-btn"
+              onClick={() => setState((current) => ({ ...current, authBusy: false, authMode: isForgot ? "login" : "forgot", resetEmail: current.resetEmail || current.authEmail }))}
+            >
+              {isForgot ? "Kembali login" : "Lupa password"}
+            </button>
+          )}
         </div>
         <p className="muted">Status: {state.dbStatus}</p>
       </section>
