@@ -15,6 +15,7 @@ import {
   publishStaticPage,
   removeWorkspaceInvite,
   removeWorkspaceMember,
+  saveLandingPage,
   sendPasswordReset,
   signIn,
   signOut,
@@ -741,32 +742,44 @@ export default function App() {
     }
   }
 
-  function applyAiDraft(mode) {
+  async function applyAiDraft(mode) {
     if (!state.aiDraft) return;
+    const aiPage = pageFromAiDraft(state.aiDraft);
+    const pageToSave = buildAiAppliedPage(page, aiPage, mode);
+
     patch((draft) => {
-      const aiPage = pageFromAiDraft(draft.aiDraft);
       if (mode === "new") {
-        draft.pages.unshift(aiPage);
-        draft.activePageId = aiPage.id;
-        draft.selectedSectionId = aiPage.sections[0]?.id || null;
+        draft.pages.unshift(pageToSave);
+        draft.activePageId = pageToSave.id;
+        draft.selectedSectionId = pageToSave.sections[0]?.id || null;
       } else {
         const target = getActivePage(draft);
-        if (mode === "append") {
-          target.sections.push(...aiPage.sections);
-        } else {
-          target.name = aiPage.name;
-          target.slug = aiPage.slug;
-          target.template = aiPage.template;
-          target.seoTitle = aiPage.seoTitle;
-          target.seoDescription = aiPage.seoDescription;
-          target.status = "Draft";
-          target.sections = aiPage.sections;
-        }
+        Object.assign(target, pageToSave);
         draft.selectedSectionId = mode === "append" ? aiPage.sections[0]?.id || target.sections[0]?.id || null : target.sections[0]?.id || null;
       }
       draft.aiDraft = null;
       draft.builderPanel = "navigator";
+      if (isSupabaseConfigured && state.session && state.workspace) {
+        draft.dbStatus = "Saving draft...";
+      }
     }, mode === "append" ? "AI sections ditambahkan." : "AI landing page diterapkan.");
+
+    if (!isSupabaseConfigured || !state.session || !state.workspace) return;
+
+    try {
+      await saveLandingPage(pageToSave, state.domain || publicDomain, state.workspace, state.session.user);
+      setState((current) => ({
+        ...current,
+        dbStatus: "Draft autosaved",
+        toast: mode === "append" ? "AI sections ditambahkan dan draft tersimpan." : "AI landing page diterapkan dan draft tersimpan."
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        dbStatus: "Autosave failed",
+        toast: `AI diterapkan, tapi autosave gagal: ${error.message}`
+      }));
+    }
   }
 
   const viewTitle = {
@@ -2000,6 +2013,27 @@ function pageFromAiDraft(aiDraft) {
       ...cloneData(section),
       id: `${section.type}-${Date.now()}-${index}`
     }))
+  };
+}
+
+function buildAiAppliedPage(currentPage, aiPage, mode) {
+  if (mode === "new") return aiPage;
+  if (mode === "append") {
+    return {
+      ...currentPage,
+      status: "Draft",
+      sections: [...currentPage.sections, ...aiPage.sections]
+    };
+  }
+  return {
+    ...currentPage,
+    name: aiPage.name,
+    slug: aiPage.slug,
+    status: "Draft",
+    template: aiPage.template,
+    seoTitle: aiPage.seoTitle,
+    seoDescription: aiPage.seoDescription,
+    sections: aiPage.sections
   };
 }
 
