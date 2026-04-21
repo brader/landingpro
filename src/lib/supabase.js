@@ -332,12 +332,36 @@ export async function publishStaticPage(page, html, domain, workspace, user) {
   };
 
   await saveLandingPage(publishedPage, domain, workspace, user);
+  publishedPage.edgePublished = await publishPageToEdge(domain, safeSlug, html);
   publishedPage.cachePurged = await purgePublishedPage(domain, safeSlug);
   return publishedPage;
 }
 
+async function publishPageToEdge(domain, slug, html) {
+  const hostname = cleanPublishHostname(domain);
+  if (!hostname || !slug || !html) return false;
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return false;
+
+    const response = await fetch(`https://${hostname}/__landingpro/publish`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ slug, html })
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function purgePublishedPage(domain, slug) {
-  const hostname = String(domain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  const hostname = cleanPublishHostname(domain);
   if (!hostname || !slug) return false;
 
   try {
@@ -352,6 +376,10 @@ export async function purgePublishedPage(domain, slug) {
   } catch {
     return false;
   }
+}
+
+function cleanPublishHostname(domain) {
+  return String(domain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 }
 
 function safeStorageSlug(value) {

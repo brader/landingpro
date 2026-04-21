@@ -473,9 +473,11 @@ export default function App() {
           storagePublicUrl: publishedPage.storagePublicUrl
         });
         draft.dbStatus = "Saved and published";
-        draft.toast = publishedPage.cachePurged
-          ? `Published, saved, cache purged: ${publishedPage.publishedUrl}`
-          : `Published & saved: ${publishedPage.publishedUrl}`;
+        draft.toast = publishedPage.edgePublished
+          ? `Published ke Cloudflare KV: ${publishedPage.publishedUrl}`
+          : publishedPage.cachePurged
+            ? `Published, saved, cache purged: ${publishedPage.publishedUrl}`
+            : `Published & saved: ${publishedPage.publishedUrl}`;
         return draft;
       });
     } catch (error) {

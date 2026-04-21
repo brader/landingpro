@@ -77,13 +77,20 @@ Gunakan template Cloudflare Worker:
 deploy/cloudflare-worker.js
 ```
 
-Worker ini membaca slug dari URL lalu mengembalikan HTML dari Supabase Storage. Worker publish tidak query database saat visitor membuka halaman. HTML dipublish ke path deterministik:
+Worker ini membaca slug dari URL lalu mengembalikan HTML dari Cloudflare KV. Jika KV miss, Worker fallback ke Supabase Storage. Worker publish tidak query database saat visitor membuka halaman. HTML backup dipublish ke path deterministik:
 
 ```text
 landing-pages/published/{slug}/index.html
 ```
 
-Saat request masuk, Worker langsung cek Cloudflare cache, lalu fetch HTML dari Supabase Storage hanya saat cache miss.
+Saat request masuk, Worker langsung cek Cloudflare cache, lalu KV, lalu Supabase Storage hanya jika KV miss.
+Saat builder publish, HTML juga dikirim ke endpoint KV:
+
+```text
+POST https://lp.novamos.id/__landingpro/publish
+```
+
+Endpoint ini memverifikasi Supabase session dari header `Authorization: Bearer <access_token>`, menulis HTML ke KV key `page:{slug}`, purge cache slug, lalu prewarm URL.
 TTL HTML development diset 5 menit di Worker. Setelah publish, builder otomatis memanggil endpoint purge. Editor juga menyediakan tombol `Purge Cache` untuk membersihkan cache halaman published secara manual:
 
 ```text
@@ -100,6 +107,7 @@ Variable Cloudflare Worker:
 
 ```text
 SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` tidak dibutuhkan lagi di Worker publish karena public visitor tidak melakukan query database.
