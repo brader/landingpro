@@ -43,14 +43,16 @@ const templates = [
   { id: "whatsapp", name: "WhatsApp Conversion", category: "Chat first", goal: "Maksimalkan klik chat dari mobile", sections: ["header", "bulletList", "button", "whatsappButton"] }
 ];
 
+const metaPixelEvents = ["PageView", "ViewContent", "Lead", "Contact", "CompleteRegistration", "AddToCart", "InitiateCheckout", "Purchase", "Subscribe"];
+
 const sectionDefaults = {
   header: { title: "Headline landing page Anda", body: "Subheadline singkat yang menjelaskan value utama offer.", level: "h1" },
   image: { src: "", image: "Gambar produk atau offer", caption: "Preview image", body: "Gunakan gambar WebP/AVIF yang sudah dikompresi.", imageSize: 100, optimizedInfo: "" },
   text: { body: "Tulis paragraf pendek yang mudah discan oleh traffic mobile dari iklan Meta." },
   bulletList: { title: "Benefit utama", items: "Cepat dipahami|Mobile-first|CTA jelas", icon: "✓" },
   divider: { body: "", thickness: 1, dividerStyle: "solid" },
-  button: { cta: "Klik Sekarang", link: "#offer", icon: "→", sticky: false },
-  whatsappButton: { cta: "Chat WhatsApp", phone: "6281234567890", message: "Halo, saya tertarik dengan promo ini.", icon: "☎", sticky: false },
+  button: { cta: "Klik Sekarang", link: "#offer", icon: "→", sticky: false, pixelEvent: "Lead" },
+  whatsappButton: { cta: "Chat WhatsApp", phone: "6281234567890", message: "Halo, saya tertarik dengan promo ini.", icon: "☎", sticky: false, pixelEvent: "Contact" },
   htmlCode: { body: "<div style=\"padding:12px;border:1px solid #ddd;border-radius:8px\">Custom HTML</div>" }
 };
 
@@ -104,7 +106,9 @@ function initialState() {
     draggedSectionId: null,
     dropTargetId: null,
     dropPosition: null,
-    pixelId: "1234567890",
+    pixelEnabled: true,
+    pixelId: "",
+    pixelPageEvent: "PageView",
     domain: publicDomain,
     dbStatus: isSupabaseConfigured ? "Supabase ready" : "Local only",
     authMode: inviteEmail ? "register" : "login",
@@ -151,6 +155,9 @@ function normalizeState(nextState) {
     toast: "",
     dbStatus: isSupabaseConfigured ? nextState.dbStatus || "Supabase ready" : "Local only",
     domain: normalizedDomain,
+    pixelEnabled: nextState.pixelEnabled ?? true,
+    pixelId: nextState.pixelId === "1234567890" ? "" : nextState.pixelId || "",
+    pixelPageEvent: nextState.pixelPageEvent || "PageView",
     session: nextState.session || null,
     workspace: nextState.workspace || null,
     authMode: inviteEmail ? "register" : nextState.authMode || "login",
@@ -463,7 +470,7 @@ export default function App() {
     setState((current) => ({ ...current, dbStatus: "Publishing..." }));
     try {
       const optimizedDraft = await externalizePublishedImages(publishedDraft);
-      const html = buildStaticHtml(optimizedDraft, publishDomain, state.pixelId);
+      const html = buildStaticHtml(optimizedDraft, publishDomain, trackingSettings(state));
       const publishedPage = await publishStaticPage(optimizedDraft, html, publishDomain, state.workspace, state.session.user);
       setState((current) => {
         const draft = cloneData(current);
@@ -514,7 +521,7 @@ export default function App() {
   }
 
   function exportPage() {
-    const html = buildStaticHtml(page, state.domain || publicDomain, state.pixelId);
+    const html = buildStaticHtml(page, state.domain || publicDomain, trackingSettings(state));
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -981,6 +988,17 @@ function Editor(props) {
               <TextField label="Slug" value={page.slug} onChange={(value) => updateActivePage("slug", value)} />
               <TextField label="SEO title" value={page.seoTitle} onChange={(value) => updateActivePage("seoTitle", value)} />
               <TextField label="SEO description" textarea value={page.seoDescription} onChange={(value) => updateActivePage("seoDescription", value)} />
+              <label className="toggle-row">
+                <input type="checkbox" checked={Boolean(state.pixelEnabled)} onChange={(event) => patch((draft) => { draft.pixelEnabled = event.target.checked; })} />
+                <span>Aktifkan Meta Pixel</span>
+              </label>
+              <TextField label="Meta Pixel ID" value={state.pixelId} onChange={(value) => patch((draft) => { draft.pixelId = cleanPixelId(value); })} />
+              <div className="field">
+                <label>Page event</label>
+                <select value={state.pixelPageEvent} onChange={(event) => patch((draft) => { draft.pixelPageEvent = event.target.value; })}>
+                  {metaPixelEvents.map((eventName) => <option key={eventName} value={eventName}>{eventName}</option>)}
+                </select>
+              </div>
             </div>
           </div>
         )}
@@ -1229,6 +1247,7 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
             <TextField label="Teks tombol" value={selected.cta} onChange={(value) => updateSelectedSection("cta", value)} />
             <TextField label="Icon tombol" value={selected.icon} onChange={(value) => updateSelectedSection("icon", value)} />
             <TextField label="Link" value={selected.link} onChange={(value) => updateSelectedSection("link", value)} />
+            <PixelEventField value={selected.pixelEvent || "Lead"} onChange={(value) => updateSelectedSection("pixelEvent", value)} />
             <label className="toggle-row">
               <input type="checkbox" checked={Boolean(selected.sticky)} onChange={(event) => updateSelectedSection("sticky", event.target.checked)} />
               <span>Jadikan sticky button</span>
@@ -1241,6 +1260,7 @@ function Inspector({ selected, tab, updateSelectedSection, updateSelectedStyle, 
             <TextField label="Icon tombol" value={selected.icon} onChange={(value) => updateSelectedSection("icon", value)} />
             <TextField label="Nomor WhatsApp" value={selected.phone} onChange={(value) => updateSelectedSection("phone", value)} />
             <TextField label="Pesan awal" textarea value={selected.message} onChange={(value) => updateSelectedSection("message", value)} />
+            <PixelEventField value={selected.pixelEvent || "Contact"} onChange={(value) => updateSelectedSection("pixelEvent", value)} />
             <label className="toggle-row">
               <input type="checkbox" checked={Boolean(selected.sticky)} onChange={(event) => updateSelectedSection("sticky", event.target.checked)} />
               <span>Jadikan sticky WhatsApp button</span>
@@ -1379,9 +1399,19 @@ function Analytics({ state, setState }) {
       <article className="card">
         <h2>Tracking setup</h2>
         <div className="form-grid">
-          <TextField label="Meta Pixel ID" value={state.pixelId} onChange={(value) => setState((current) => ({ ...current, pixelId: value }))} />
-          <div className="field"><label>Conversion event</label><select><option>Lead</option><option>Purchase</option><option>Contact</option></select></div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={Boolean(state.pixelEnabled)} onChange={(event) => setState((current) => ({ ...current, pixelEnabled: event.target.checked }))} />
+            <span>Aktifkan Meta Pixel di published page</span>
+          </label>
+          <TextField label="Meta Pixel ID" value={state.pixelId} onChange={(value) => setState((current) => ({ ...current, pixelId: cleanPixelId(value) }))} />
+          <div className="field">
+            <label>Page event</label>
+            <select value={state.pixelPageEvent} onChange={(event) => setState((current) => ({ ...current, pixelPageEvent: event.target.value }))}>
+              {metaPixelEvents.map((eventName) => <option key={eventName} value={eventName}>{eventName}</option>)}
+            </select>
+          </div>
           <div className="field"><label>UTM source</label><input value="facebook / instagram" readOnly /></div>
+          <p className="field-help">Published page akan mengirim PageView/ViewContent dan event CTA seperti Lead atau Contact saat tombol diklik.</p>
         </div>
       </article>
     </div>
@@ -1612,6 +1642,19 @@ function TextField({ label, value, onChange, textarea = false }) {
   );
 }
 
+function PixelEventField({ value, onChange }) {
+  return (
+    <div className="field">
+      <label>Meta event saat klik</label>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {metaPixelEvents.filter((eventName) => eventName !== "PageView").map((eventName) => (
+          <option key={eventName} value={eventName}>{eventName}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function ColorField({ label, value, onChange }) {
   return (
     <div className="field color-field">
@@ -1804,9 +1847,22 @@ function safeStorageSet(key, value) {
   }
 }
 
-function buildStaticHtml(page, domain, pixelId) {
+function trackingSettings(state) {
+  return {
+    enabled: Boolean(state.pixelEnabled),
+    pixelId: cleanPixelId(state.pixelId),
+    pageEvent: state.pixelPageEvent || "PageView"
+  };
+}
+
+function cleanPixelId(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 32);
+}
+
+function buildStaticHtml(page, domain, tracking) {
   const visibleSections = page.sections.filter((section) => !section.style.hidden);
   const sticky = visibleSections.find(isStickyButton);
+  const metaPixel = renderMetaPixel(tracking);
 
   return `<!doctype html>
 <html lang="id">
@@ -1816,18 +1872,29 @@ function buildStaticHtml(page, domain, pixelId) {
     <meta name="description" content="${escapeAttr(page.seoDescription)}">
     <title>${escapeHtml(page.seoTitle || page.name)}</title>
     <style>${publishedCss()}</style>
-    ${pixelId ? `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${escapeJs(pixelId)}');fbq('track','PageView');</script>` : ""}
+    ${metaPixel.head}
   </head>
   <body>
+    ${metaPixel.body}
     <main class="landing-page" data-domain="${escapeAttr(domain)}">
       ${visibleSections.map(renderStaticSection).join("\n")}
     </main>
     ${sticky ? renderStaticSticky(sticky) : ""}
     <script>
-      document.querySelectorAll('[data-track]').forEach(function(el){el.addEventListener('click',function(){window.fbq&&fbq('track',el.dataset.track);});});
+      document.querySelectorAll('[data-track]').forEach(function(el){el.addEventListener('click',function(){window.fbq&&fbq('track',el.dataset.track,{content_name:el.textContent.trim()});});});
     </script>
   </body>
 </html>`;
+}
+
+function renderMetaPixel(tracking) {
+  const pixelId = cleanPixelId(tracking?.pixelId);
+  if (!tracking?.enabled || !pixelId) return { head: "", body: "" };
+  const pageEvent = metaPixelEvents.includes(tracking.pageEvent) ? tracking.pageEvent : "PageView";
+  return {
+    head: `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${escapeJs(pixelId)}');fbq('track','${escapeJs(pageEvent)}');</script>`,
+    body: `<noscript><img height="1" width="1" style="display:none" alt="" src="https://www.facebook.com/tr?id=${escapeAttr(pixelId)}&ev=${escapeAttr(pageEvent)}&noscript=1"></noscript>`
+  };
 }
 
 function renderStaticSection(section) {
@@ -1852,10 +1919,10 @@ function renderStaticSection(section) {
     return `<section class="lp-section" style="${style}"><div class="divider-widget" style="border-top:${Number(section.thickness)}px ${escapeAttr(section.dividerStyle)} ${escapeAttr(section.style.accentColor)}"></div></section>`;
   }
   if (section.type === "button") {
-    return `<section class="lp-section" style="${style}"><a class="lp-button" style="background:${escapeAttr(section.style.accentColor)}" data-track="Lead" href="${escapeAttr(section.link || "#")}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></section>`;
+    return `<section class="lp-section" style="${style}"><a class="lp-button" style="background:${escapeAttr(section.style.accentColor)}" data-track="${escapeAttr(section.pixelEvent || "Lead")}" href="${escapeAttr(section.link || "#")}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></section>`;
   }
   if (section.type === "whatsappButton") {
-    return `<section class="lp-section" style="${style}"><a class="lp-button whatsapp-widget" style="background:${escapeAttr(section.style.accentColor)}" data-track="Contact" href="${escapeAttr(whatsappHref(section))}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></section>`;
+    return `<section class="lp-section" style="${style}"><a class="lp-button whatsapp-widget" style="background:${escapeAttr(section.style.accentColor)}" data-track="${escapeAttr(section.pixelEvent || "Contact")}" href="${escapeAttr(whatsappHref(section))}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></section>`;
   }
   if (section.type === "htmlCode") {
     return `<section class="lp-section" style="${style}"><div class="html-widget">${section.body || ""}</div></section>`;
@@ -1865,7 +1932,7 @@ function renderStaticSection(section) {
 
 function renderStaticSticky(section) {
   const className = section.type === "whatsappButton" ? "lp-button whatsapp-widget" : "lp-button";
-  return `<div class="sticky-cta"><a class="${className}" style="background:${escapeAttr(section.style.accentColor)}" data-track="${section.type === "whatsappButton" ? "Contact" : "Lead"}" href="${escapeAttr(buttonHref(section))}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></div>`;
+  return `<div class="sticky-cta"><a class="${className}" style="background:${escapeAttr(section.style.accentColor)}" data-track="${escapeAttr(section.pixelEvent || (section.type === "whatsappButton" ? "Contact" : "Lead"))}" href="${escapeAttr(buttonHref(section))}">${escapeHtml(section.icon)} ${escapeHtml(section.cta)}</a></div>`;
 }
 
 function publishedCss() {

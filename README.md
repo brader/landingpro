@@ -98,6 +98,7 @@ landing-pages/published/{slug}/assets/{section-id}-{hash}.webp
 ```
 
 HTML published memakai URL asset tersebut supaya dokumen HTML tetap kecil untuk first visitor.
+Meta Pixel bisa diaktifkan dari Page Settings atau Analytics. Builder menyisipkan Pixel base code, noscript fallback, page event, dan event CTA per tombol seperti `Lead`, `Contact`, atau `Purchase`.
 TTL HTML development diset 5 menit di Worker. Setelah publish, builder otomatis memanggil endpoint purge. Editor juga menyediakan tombol `Purge Cache` untuk membersihkan cache halaman published secara manual:
 
 ```text
