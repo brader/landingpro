@@ -332,7 +332,26 @@ export async function publishStaticPage(page, html, domain, workspace, user) {
   };
 
   await saveLandingPage(publishedPage, domain, workspace, user);
+  publishedPage.cachePurged = await purgePublishedPage(domain, safeSlug);
   return publishedPage;
+}
+
+export async function purgePublishedPage(domain, slug) {
+  const hostname = String(domain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!hostname || !slug) return false;
+
+  try {
+    const response = await fetch(`https://${hostname}/__landingpro/purge`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ slug })
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function safeStorageSlug(value) {

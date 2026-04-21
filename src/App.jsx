@@ -9,6 +9,7 @@ import {
   loadWorkspacePages,
   onAuthChange,
   publicDomain,
+  purgePublishedPage,
   publishStaticPage,
   removeWorkspaceInvite,
   removeWorkspaceMember,
@@ -472,12 +473,25 @@ export default function App() {
           storagePublicUrl: publishedPage.storagePublicUrl
         });
         draft.dbStatus = "Saved and published";
-        draft.toast = `Published & saved: ${publishedPage.publishedUrl}`;
+        draft.toast = publishedPage.cachePurged
+          ? `Published, saved, cache purged: ${publishedPage.publishedUrl}`
+          : `Published & saved: ${publishedPage.publishedUrl}`;
         return draft;
       });
     } catch (error) {
       setState((current) => ({ ...current, dbStatus: "Supabase error", toast: error.message }));
     }
+  }
+
+  async function purgeActivePageCache() {
+    if (!page?.slug) return;
+    setState((current) => ({ ...current, dbStatus: "Purging cache..." }));
+    const purged = await purgePublishedPage(state.domain || publicDomain, page.slug);
+    setState((current) => ({
+      ...current,
+      dbStatus: purged ? "Cache purged" : "Purge unavailable",
+      toast: purged ? "Cache halaman berhasil dibersihkan." : "Purge cache belum berhasil. Coba publish ulang."
+    }));
   }
 
   function exportPage() {
@@ -688,6 +702,9 @@ export default function App() {
                 <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
                 {page.status === "Published" && activeVisitUrl && (
                   <a className="ghost-btn" href={activeVisitUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Page</a>
+                )}
+                {page.status === "Published" && (
+                  <button className="ghost-btn" onClick={purgeActivePageCache} title="Clear cached published page">Purge Cache</button>
                 )}
                 <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
                 <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>

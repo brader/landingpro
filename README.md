@@ -84,6 +84,17 @@ landing-pages/published/{slug}/index.html
 ```
 
 Saat request masuk, Worker langsung cek Cloudflare cache, lalu fetch HTML dari Supabase Storage hanya saat cache miss.
+TTL HTML development diset 5 menit di Worker. Setelah publish, builder otomatis memanggil endpoint purge. Editor juga menyediakan tombol `Purge Cache` untuk membersihkan cache halaman published secara manual:
+
+```text
+POST https://lp.novamos.id/__landingpro/purge
+```
+
+Payload:
+
+```json
+{ "slug": "nama-page" }
+```
 
 Variable Cloudflare Worker:
 
