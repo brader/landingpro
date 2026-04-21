@@ -312,11 +312,23 @@ export default function App() {
     }
 
     bootstrapAuth();
-    const unsubscribe = onAuthChange((session) => {
-      if (session) {
-        loadAuthenticatedWorkspace(session);
-      } else {
+    const unsubscribe = onAuthChange((session, event) => {
+      if (!session) {
         setState((current) => ({ ...current, session: null, workspace: null, dbStatus: "Auth required" }));
+        return;
+      }
+
+      if (event === "SIGNED_IN") {
+        loadAuthenticatedWorkspace(session);
+        return;
+      }
+
+      if (event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
+        setState((current) => ({
+          ...current,
+          session,
+          dbStatus: current.dbStatus === "Auth required" ? "Synced with Supabase" : current.dbStatus
+        }));
       }
     });
 
