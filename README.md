@@ -91,6 +91,13 @@ POST https://lp.novamos.id/__landingpro/publish
 ```
 
 Endpoint ini memverifikasi Supabase session dari header `Authorization: Bearer <access_token>`, menulis HTML ke KV key `page:{slug}`, purge cache slug, lalu prewarm URL.
+Saat publish, gambar upload yang masih berupa `data:image/...` otomatis dipindahkan menjadi file asset terpisah di:
+
+```text
+landing-pages/published/{slug}/assets/{section-id}-{hash}.webp
+```
+
+HTML published memakai URL asset tersebut supaya dokumen HTML tetap kecil untuk first visitor.
 TTL HTML development diset 5 menit di Worker. Setelah publish, builder otomatis memanggil endpoint purge. Editor juga menyediakan tombol `Purge Cache` untuk membersihkan cache halaman published secara manual:
 
 ```text

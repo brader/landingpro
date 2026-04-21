@@ -337,6 +337,41 @@ export async function publishStaticPage(page, html, domain, workspace, user) {
   return publishedPage;
 }
 
+export async function publishImageAsset(pageSlug, sectionId, src) {
+  if (!supabase || !src || !String(src).startsWith("data:image/")) return src;
+
+  const match = String(src).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return src;
+
+  const mimeType = match[1].toLowerCase();
+  const extension = mimeType.includes("webp")
+    ? "webp"
+    : mimeType.includes("png")
+      ? "png"
+      : mimeType.includes("jpeg") || mimeType.includes("jpg")
+        ? "jpg"
+        : "webp";
+  const bytes = base64ToBytes(match[2]);
+  const hash = shortHash(match[2]);
+  const storagePath = `published/${safeStorageSlug(pageSlug)}/assets/${safeStorageSlug(sectionId)}-${hash}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("landing-pages")
+    .upload(storagePath, new Blob([bytes], { type: mimeType }), {
+      cacheControl: "31536000",
+      contentType: mimeType,
+      upsert: true
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage
+    .from("landing-pages")
+    .getPublicUrl(storagePath);
+
+  return data.publicUrl;
+}
+
 async function publishPageToEdge(domain, slug, html) {
   const hostname = cleanPublishHostname(domain);
   if (!hostname || !slug || !html) return false;
@@ -380,6 +415,23 @@ export async function purgePublishedPage(domain, slug) {
 
 function cleanPublishHostname(domain) {
   return String(domain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+}
+
+function base64ToBytes(base64) {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function shortHash(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function safeStorageSlug(value) {

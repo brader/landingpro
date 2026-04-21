@@ -10,6 +10,7 @@ import {
   onAuthChange,
   publicDomain,
   purgePublishedPage,
+  publishImageAsset,
   publishStaticPage,
   removeWorkspaceInvite,
   removeWorkspaceMember,
@@ -461,12 +462,14 @@ export default function App() {
 
     setState((current) => ({ ...current, dbStatus: "Publishing..." }));
     try {
-      const html = buildStaticHtml(publishedDraft, publishDomain, state.pixelId);
-      const publishedPage = await publishStaticPage(publishedDraft, html, publishDomain, state.workspace, state.session.user);
+      const optimizedDraft = await externalizePublishedImages(publishedDraft);
+      const html = buildStaticHtml(optimizedDraft, publishDomain, state.pixelId);
+      const publishedPage = await publishStaticPage(optimizedDraft, html, publishDomain, state.workspace, state.session.user);
       setState((current) => {
         const draft = cloneData(current);
         const target = getActivePage(draft);
         Object.assign(target, {
+          sections: publishedPage.sections,
           status: "Published",
           publishedUrl: publishedPage.publishedUrl,
           storagePath: publishedPage.storagePath,
@@ -483,6 +486,20 @@ export default function App() {
     } catch (error) {
       setState((current) => ({ ...current, dbStatus: "Supabase error", toast: error.message }));
     }
+  }
+
+  async function externalizePublishedImages(sourcePage) {
+    const nextPage = cloneData(sourcePage);
+    const imageSections = nextPage.sections.filter((section) => section.type === "image" && String(section.src || "").startsWith("data:image/"));
+    if (!imageSections.length) return nextPage;
+
+    setState((current) => ({ ...current, dbStatus: "Optimizing images..." }));
+    for (const section of imageSections) {
+      const imageUrl = await publishImageAsset(nextPage.slug || nextPage.id, section.id, section.src);
+      section.src = imageUrl;
+      section.optimizedInfo = "Image published as external optimized asset for faster first load.";
+    }
+    return nextPage;
   }
 
   async function purgeActivePageCache() {
