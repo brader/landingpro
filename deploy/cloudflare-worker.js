@@ -169,15 +169,72 @@ async function generateAiLandingPage(request, env) {
     return jsonResponse({ ok: false, error: openAiPayload.error?.message || "OpenAI request gagal." }, 502, headers);
   }
 
-  const content = openAiPayload.choices?.[0]?.message?.content || "";
-  let page = null;
-  try {
-    page = JSON.parse(content);
-  } catch {
-    return jsonResponse({ ok: false, error: "AI mengembalikan JSON yang tidak valid." }, 502, headers);
+  const parsed = parseAiPage(openAiPayload.choices?.[0]?.message);
+  if (!parsed.ok) {
+    return jsonResponse({ ok: false, error: parsed.error }, 502, headers);
   }
 
-  return jsonResponse({ ok: true, page }, 200, headers);
+  return jsonResponse({ ok: true, page: parsed.page }, 200, headers);
+}
+
+function parseAiPage(message) {
+  if (!message) {
+    return { ok: false, error: "AI tidak mengembalikan response." };
+  }
+  if (message.parsed && typeof message.parsed === "object") {
+    return { ok: true, page: message.parsed };
+  }
+
+  const content = normalizeAiContent(message.content);
+  const candidates = [
+    content,
+    stripCodeFence(content),
+    extractJsonObject(content)
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const page = JSON.parse(candidate);
+      if (page && typeof page === "object") return { ok: true, page };
+    } catch {
+      // Try the next shape. Models can occasionally wrap JSON in prose/code fences.
+    }
+  }
+
+  return { ok: false, error: "AI mengembalikan JSON yang belum valid. Coba generate ulang dengan brief lebih singkat." };
+}
+
+function normalizeAiContent(content) {
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (typeof part?.text === "string") return part.text;
+        if (typeof part?.content === "string") return part.content;
+        return "";
+      })
+      .join("\n")
+      .trim();
+  }
+  if (content && typeof content === "object") return JSON.stringify(content);
+  return "";
+}
+
+function stripCodeFence(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function extractJsonObject(value) {
+  const text = String(value || "");
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return "";
+  return text.slice(start, end + 1).trim();
 }
 
 async function publishPageToKv(request, url, env, ctx) {
