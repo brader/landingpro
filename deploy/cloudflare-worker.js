@@ -104,7 +104,7 @@ async function generateAiLandingPage(request, env) {
     body: JSON.stringify({
       model: env.OPENAI_MODEL || "gpt-4.1-mini",
       temperature: 0.7,
-      max_tokens: 1800,
+      max_tokens: 4500,
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -171,6 +171,10 @@ async function generateAiLandingPage(request, env) {
 
   const parsed = parseAiPage(openAiPayload.choices?.[0]?.message);
   if (!parsed.ok) {
+    const repaired = await repairAiJson(parsed.content, env);
+    if (repaired.ok) {
+      return jsonResponse({ ok: true, page: repaired.page, repaired: true }, 200, headers);
+    }
     return jsonResponse({ ok: false, error: parsed.error }, 502, headers);
   }
 
@@ -201,7 +205,53 @@ function parseAiPage(message) {
     }
   }
 
-  return { ok: false, error: "AI mengembalikan JSON yang belum valid. Coba generate ulang dengan brief lebih singkat." };
+  return {
+    ok: false,
+    content,
+    error: message.finish_reason === "length"
+      ? "Output AI kepotong sebelum JSON selesai. Coba generate ulang."
+      : "AI mengembalikan JSON yang belum valid. Coba generate ulang dengan brief lebih singkat."
+  };
+}
+
+async function repairAiJson(content, env) {
+  const raw = String(content || "").trim();
+  if (!raw) return { ok: false };
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL || "gpt-4.1-mini",
+      temperature: 0,
+      max_tokens: 4500,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "landingpro_ai_page",
+          strict: true,
+          schema: aiPageSchema()
+        }
+      },
+      messages: [
+        {
+          role: "system",
+          content: "Repair the user's malformed LandingPro JSON into one valid JSON object matching the provided schema. Preserve the intended Indonesian copy where possible. Return only the valid JSON object."
+        },
+        {
+          role: "user",
+          content: raw.slice(0, 14000)
+        }
+      ]
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false };
+  return parseAiPage(payload.choices?.[0]?.message);
 }
 
 function normalizeAiContent(content) {
