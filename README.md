@@ -77,16 +77,27 @@ Gunakan template Cloudflare Worker:
 deploy/cloudflare-worker.js
 ```
 
-Worker ini membaca slug dari URL, mencari `storage_path` di tabel `landing_pages`, lalu mengembalikan HTML dari Supabase Storage.
+Worker ini membaca slug dari URL lalu mengembalikan HTML dari Supabase Storage. Worker publish tidak query database saat visitor membuka halaman. HTML dipublish ke path deterministik:
 
-Secrets Cloudflare Worker:
+```text
+landing-pages/published/{slug}/index.html
+```
+
+Saat request masuk, Worker langsung cek Cloudflare cache, lalu fetch HTML dari Supabase Storage hanya saat cache miss.
+
+Variable Cloudflare Worker:
 
 ```text
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-Jangan masukkan `SUPABASE_SERVICE_ROLE_KEY` ke frontend `.env`.
+`SUPABASE_SERVICE_ROLE_KEY` tidak dibutuhkan lagi di Worker publish karena public visitor tidak melakukan query database.
+
+Deploy Worker publish:
+
+```text
+npx wrangler deploy --config deploy/wrangler.publish.jsonc
+```
 
 ## Deploy Frontend Builder
 

@@ -1,40 +1,34 @@
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const slug = url.pathname.split("/").filter(Boolean)[0];
+    const slug = safeSlug(url.pathname.split("/").filter(Boolean)[0]);
 
     if (!slug) {
       return new Response("LandingPro published pages", {
-        headers: { "content-type": "text/plain;charset=utf-8" }
+        headers: {
+          "content-type": "text/plain;charset=utf-8",
+          "cache-control": "public, max-age=60"
+        }
       });
     }
 
-    const pageResponse = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/landing_pages?slug=eq.${encodeURIComponent(slug)}&status=eq.Published&select=storage_path,published_url,updated_at&order=updated_at.desc&limit=1`,
-      {
-        headers: {
-          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-          authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
-        }
+    const cache = caches.default;
+    const cacheKey = new Request(`${url.origin}/${slug}/`, {
+      method: "GET",
+      headers: {
+        accept: "text/html"
       }
-    );
-
-    if (!pageResponse.ok) {
-      return new Response("Failed to query landing page", { status: 502 });
+    });
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      return withHeader(cached, "x-landingpro-cache", "HIT");
     }
 
-    const pages = await pageResponse.json();
-    const page = pages[0];
-
-    if (!page?.storage_path) {
-      return new Response("Landing page not found", { status: 404 });
-    }
-
-    const storageUrl = `${env.SUPABASE_URL}/storage/v1/object/public/landing-pages/${page.storage_path}`;
+    const storageUrl = `${env.SUPABASE_URL}/storage/v1/object/public/landing-pages/published/${encodeURIComponent(slug)}/index.html`;
     const htmlResponse = await fetch(storageUrl, {
       cf: {
         cacheEverything: true,
-        cacheTtl: 300
+        cacheTtl: 3600
       }
     });
 
@@ -44,15 +38,40 @@ export default {
 
     const headers = new Headers({
       "content-type": "text/html;charset=utf-8",
-      "cache-control": "public, max-age=300, stale-while-revalidate=86400",
+      "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=86400",
+      "cdn-cache-control": "public, max-age=3600",
+      "cloudflare-cdn-cache-control": "public, max-age=3600",
       "x-landingpro-slug": slug,
+      "x-landingpro-cache": "MISS",
       "x-content-type-options": "nosniff",
       "referrer-policy": "strict-origin-when-cross-origin"
     });
 
-    return new Response(htmlResponse.body, {
+    const response = new Response(htmlResponse.body, {
       status: 200,
       headers
     });
+
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
   }
 };
+
+function safeSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function withHeader(response, name, value) {
+  const headers = new Headers(response.headers);
+  headers.set(name, value);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}

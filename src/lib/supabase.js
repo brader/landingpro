@@ -307,8 +307,8 @@ export async function saveAllLandingPages(pages, domain, workspace, user) {
 export async function publishStaticPage(page, html, domain, workspace, user) {
   if (!supabase || !workspace || !user) return null;
 
-  const safeSlug = page.slug || page.id;
-  const storagePath = `${user.id}/${safeSlug}/index.html`;
+  const safeSlug = safeStorageSlug(page.slug || page.id);
+  const storagePath = `published/${safeSlug}/index.html`;
   const { error: uploadError } = await supabase.storage
     .from("landing-pages")
     .upload(storagePath, new Blob([html], { type: "text/html;charset=utf-8" }), {
@@ -333,4 +333,13 @@ export async function publishStaticPage(page, html, domain, workspace, user) {
 
   await saveLandingPage(publishedPage, domain, workspace, user);
   return publishedPage;
+}
+
+function safeStorageSlug(value) {
+  return String(value || "landing-page")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "landing-page";
 }

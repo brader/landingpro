@@ -333,7 +333,10 @@ on storage.objects for insert
 to authenticated
 with check (
   bucket_id = 'landing-pages'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (storage.foldername(name))[1] = 'published'
+  )
 );
 
 drop policy if exists "landing pages owner update" on storage.objects;
@@ -342,11 +345,17 @@ on storage.objects for update
 to authenticated
 using (
   bucket_id = 'landing-pages'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (storage.foldername(name))[1] = 'published'
+  )
 )
 with check (
   bucket_id = 'landing-pages'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (storage.foldername(name))[1] = 'published'
+  )
 );
 
 drop policy if exists "landing pages owner delete" on storage.objects;
@@ -355,5 +364,8 @@ on storage.objects for delete
 to authenticated
 using (
   bucket_id = 'landing-pages'
-  and (storage.foldername(name))[1] = auth.uid()::text
+  and (
+    (storage.foldername(name))[1] = auth.uid()::text
+    or (storage.foldername(name))[1] = 'published'
+  )
 );
