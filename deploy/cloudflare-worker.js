@@ -116,18 +116,45 @@ async function generateAiLandingPage(request, env) {
       messages: [
         {
           role: "system",
-          content: "You are an expert direct response landing page copywriter for Meta Ads traffic in Indonesia. Generate concise, mobile-first, high-conversion landing pages for a simple no-code builder. Return only valid JSON matching the schema. Avoid heavy sections, fake testimonials, impossible guarantees, medical or financial overclaims, and unsupported widget types. Use Indonesian unless the brief clearly requests another language."
+          content: [
+            "You are a senior direct-response strategist, landing page UX designer, and conversion copywriter for Indonesian Meta Ads traffic.",
+            "Generate landing pages that feel specific, commercially sharp, and ready to edit, not generic placeholder pages.",
+            "Use the requested framework when provided, especially AIDA, PAS, BAB, 4P, or advertorial storyselling.",
+            "Every page must have a clear persuasion arc: hook, problem recognition, solution mechanism, concrete benefits, offer stack, proof or proof placeholder, objection handling, and final action.",
+            "Keep it mobile-first, fast-loading, and scannable. No heavy widgets, fake testimonials, impossible guarantees, medical or financial overclaims, or unsupported widget types.",
+            "Use Indonesian unless the brief clearly requests another language. Return only valid JSON matching the schema."
+          ].join(" ")
         },
         {
           role: "user",
           content: JSON.stringify({
             task: "Generate a ready-to-edit LandingPro page.",
+            conversionFramework: brief.framework || "AIDA + PAS",
+            recommendedPageShape: [
+              "1. Header: attention-grabbing headline with clear outcome, not vague hype.",
+              "2. Text: PAS problem agitation and empathy using the audience language.",
+              "3. Image: visual placeholder guidance for the product/offer.",
+              "4. BulletList: interest/desire benefits, concrete and outcome-based.",
+              "5. Text: solution mechanism or why this offer works.",
+              "6. BulletList: offer stack, what they get, bonuses, guarantees, or process.",
+              "7. Text or htmlCode: proof placeholder and risk reversal without fake claims.",
+              "8. htmlCode: FAQ/objection handling with 4 to 5 questions.",
+              "9. Sticky WhatsApp/button CTA: direct action with pixelEvent Contact or Lead."
+            ],
             rules: [
-              "Use 6 to 8 sections only.",
-              "Prefer short paragraphs and scannable bullets.",
+              "Use 8 to 10 sections when the brief has enough context; use 6 to 8 only for very simple offers.",
+              "Make the copy specific to the product, audience, pain, benefit, price, and CTA goal in the brief.",
+              "Headlines should be clear and benefit-led, around 7 to 14 words.",
+              "Subheadlines should explain who it is for, what outcome they get, and why it is easier/faster/different.",
+              "Prefer short paragraphs, strong subheads, and scannable bullets.",
+              "Use AIDA: Attention in hero, Interest in problem/solution, Desire in benefits/offer/proof, Action in CTA.",
+              "Use PAS inside the problem section: problem, agitation, solution transition.",
+              "Use ethical urgency only if offer/price/promo supports it. Do not invent deadlines.",
               "Use one sticky WhatsApp or CTA button when relevant.",
               "Do not invent real testimonials; use proof placeholders if needed.",
+              "FAQ should answer real buyer objections: cocok untuk siapa, cara kerja, hasil yang realistis, harga/pembayaran, cara daftar.",
               "Map WhatsApp CTA to pixelEvent Contact, lead CTA to Lead, product detail to ViewContent.",
+              "For htmlCode FAQ, use lightweight semantic HTML only: <div>, <h2>, <details>, <summary>, <p>. No script, iframe, style tag, or external assets.",
               "Supported section types: header, text, bulletList, image, divider, button, whatsappButton, htmlCode."
             ],
             brief
@@ -242,6 +269,7 @@ async function purgePageCache(request, url, env) {
 function sanitizeBrief(brief) {
   return {
     pageType: trimText(brief.pageType, 60),
+    framework: trimText(brief.framework, 80),
     product: trimText(brief.product, 160),
     audience: trimText(brief.audience, 220),
     problem: trimText(brief.problem, 500),

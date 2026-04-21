@@ -128,7 +128,15 @@ Set secret AI Builder:
 npx wrangler secret put OPENAI_API_KEY --config deploy/wrangler.publish.jsonc
 ```
 
-AI Builder tersedia di tab `AI` pada workspace Editor. User mengisi brief produk, audience, problem, benefit, offer, harga, CTA, dan tone. Worker memverifikasi Supabase session, memanggil OpenAI, lalu mengembalikan JSON section yang bisa di-apply sebagai `Replace Page`, `Append`, atau `Create New`.
+AI Builder tersedia di tab `AI` pada workspace Editor. User mengisi brief produk, framework copywriting, audience, problem, benefit, offer, harga, CTA, dan tone. Worker memverifikasi Supabase session, memanggil OpenAI, lalu mengembalikan JSON section yang bisa di-apply sebagai `Replace Page`, `Append`, atau `Create New`.
+
+Framework AI Builder yang tersedia:
+
+- AIDA + PAS
+- PAS + Offer Stack
+- Before After Bridge
+- 4P: Picture Promise Prove Push
+- Advertorial Storyselling
 
 Deploy Worker publish:
 

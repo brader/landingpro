@@ -45,6 +45,7 @@ const templates = [
 ];
 
 const aiPageTypes = ["WhatsApp Conversion", "Lead Generation", "Produk Fisik", "Produk Digital", "Advertorial Ringan", "Katalog Singkat", "Service Business"];
+const aiFrameworkOptions = ["AIDA + PAS", "PAS + Offer Stack", "Before After Bridge", "4P: Picture Promise Prove Push", "Advertorial Storyselling"];
 const aiToneOptions = ["Santai meyakinkan", "Direct response", "Profesional", "Premium", "Hangat dan edukatif"];
 const metaPixelEvents = ["PageView", "ViewContent", "Lead", "Contact", "CompleteRegistration", "AddToCart", "InitiateCheckout", "Purchase", "Subscribe"];
 
@@ -126,6 +127,7 @@ function initialState() {
     members: [],
     invites: [],
     aiPageType: "WhatsApp Conversion",
+    aiFramework: "AIDA + PAS",
     aiProduct: "",
     aiAudience: "",
     aiProblem: "",
@@ -185,6 +187,7 @@ function normalizeState(nextState) {
     members: Array.isArray(nextState.members) ? nextState.members : [],
     invites: Array.isArray(nextState.invites) ? nextState.invites : [],
     aiPageType: nextState.aiPageType || "WhatsApp Conversion",
+    aiFramework: nextState.aiFramework || "AIDA + PAS",
     aiProduct: nextState.aiProduct || "",
     aiAudience: nextState.aiAudience || "",
     aiProblem: nextState.aiProblem || "",
@@ -700,6 +703,7 @@ export default function App() {
     try {
       const generated = await generateAiLandingPage(state.domain || publicDomain, {
         pageType: state.aiPageType,
+        framework: state.aiFramework,
         product: state.aiProduct,
         audience: state.aiAudience,
         problem: state.aiProblem,
@@ -1157,6 +1161,12 @@ function AiBuilderPanel({ state, patch, onGenerateAiPage, applyAiDraft }) {
           <label>Page type</label>
           <select value={state.aiPageType} onChange={(event) => patch((draftState) => { draftState.aiPageType = event.target.value; })}>
             {aiPageTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Framework copywriting</label>
+          <select value={state.aiFramework} onChange={(event) => patch((draftState) => { draftState.aiFramework = event.target.value; })}>
+            {aiFrameworkOptions.map((framework) => <option key={framework} value={framework}>{framework}</option>)}
           </select>
         </div>
         <TextField label="Produk / offer" value={state.aiProduct} onChange={(value) => patch((draftState) => { draftState.aiProduct = value; })} />
@@ -1962,7 +1972,7 @@ function normalizeAiSection(section, index) {
   if (type === "htmlCode") {
     return {
       ...base,
-      body: sanitizeRichHtml(String(section.body || "<div>Custom HTML</div>"))
+      body: sanitizeRichHtml(String(section.body || "<div>Custom HTML</div>").slice(0, 2600))
     };
   }
   return null;
