@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ensureUserWorkspace,
+  generateAiLandingPage,
   getCurrentSession,
   inviteWorkspaceMember,
   isSupabaseConfigured,
@@ -43,6 +44,8 @@ const templates = [
   { id: "whatsapp", name: "WhatsApp Conversion", category: "Chat first", goal: "Maksimalkan klik chat dari mobile", sections: ["header", "bulletList", "button", "whatsappButton"] }
 ];
 
+const aiPageTypes = ["WhatsApp Conversion", "Lead Generation", "Produk Fisik", "Produk Digital", "Advertorial Ringan", "Katalog Singkat", "Service Business"];
+const aiToneOptions = ["Santai meyakinkan", "Direct response", "Profesional", "Premium", "Hangat dan edukatif"];
 const metaPixelEvents = ["PageView", "ViewContent", "Lead", "Contact", "CompleteRegistration", "AddToCart", "InitiateCheckout", "Purchase", "Subscribe"];
 
 const sectionDefaults = {
@@ -122,6 +125,17 @@ function initialState() {
     memberRole: "member",
     members: [],
     invites: [],
+    aiPageType: "WhatsApp Conversion",
+    aiProduct: "",
+    aiAudience: "",
+    aiProblem: "",
+    aiBenefit: "",
+    aiOffer: "",
+    aiPrice: "",
+    aiCtaGoal: "Chat WhatsApp",
+    aiTone: "Santai meyakinkan",
+    aiDraft: null,
+    aiBusy: false,
     session: null,
     workspace: null,
     toast: "",
@@ -170,6 +184,17 @@ function normalizeState(nextState) {
     memberRole: nextState.memberRole || "member",
     members: Array.isArray(nextState.members) ? nextState.members : [],
     invites: Array.isArray(nextState.invites) ? nextState.invites : [],
+    aiPageType: nextState.aiPageType || "WhatsApp Conversion",
+    aiProduct: nextState.aiProduct || "",
+    aiAudience: nextState.aiAudience || "",
+    aiProblem: nextState.aiProblem || "",
+    aiBenefit: nextState.aiBenefit || "",
+    aiOffer: nextState.aiOffer || "",
+    aiPrice: nextState.aiPrice || "",
+    aiCtaGoal: nextState.aiCtaGoal || "Chat WhatsApp",
+    aiTone: nextState.aiTone || "Santai meyakinkan",
+    aiDraft: nextState.aiDraft || null,
+    aiBusy: false,
     draggedSectionId: null,
     dropTargetId: null,
     dropPosition: null,
@@ -663,6 +688,71 @@ export default function App() {
     }
   }
 
+  async function handleGenerateAiPage(event) {
+    event.preventDefault();
+    if (state.aiBusy) return;
+    if (!state.aiProduct.trim() || !state.aiAudience.trim() || !state.aiProblem.trim()) {
+      setState((current) => ({ ...current, toast: "Isi minimal produk, target audience, dan masalah utama." }));
+      return;
+    }
+
+    setState((current) => ({ ...current, aiBusy: true, dbStatus: "AI generating...", toast: "" }));
+    try {
+      const generated = await generateAiLandingPage(state.domain || publicDomain, {
+        pageType: state.aiPageType,
+        product: state.aiProduct,
+        audience: state.aiAudience,
+        problem: state.aiProblem,
+        benefit: state.aiBenefit,
+        offer: state.aiOffer,
+        price: state.aiPrice,
+        ctaGoal: state.aiCtaGoal,
+        tone: state.aiTone,
+        currentPage: {
+          name: page.name,
+          slug: page.slug,
+          sections: page.sections.map((section) => ({
+            type: section.type,
+            title: section.title || section.cta || "",
+            body: section.body || section.items || ""
+          }))
+        }
+      });
+      const aiDraft = normalizeAiDraft(generated, page);
+      setState((current) => ({ ...current, aiBusy: false, aiDraft, dbStatus: "AI draft ready", toast: "AI draft siap. Preview dulu lalu apply." }));
+    } catch (error) {
+      setState((current) => ({ ...current, aiBusy: false, dbStatus: "AI error", toast: error.message }));
+    }
+  }
+
+  function applyAiDraft(mode) {
+    if (!state.aiDraft) return;
+    patch((draft) => {
+      const aiPage = pageFromAiDraft(draft.aiDraft);
+      if (mode === "new") {
+        draft.pages.unshift(aiPage);
+        draft.activePageId = aiPage.id;
+        draft.selectedSectionId = aiPage.sections[0]?.id || null;
+      } else {
+        const target = getActivePage(draft);
+        if (mode === "append") {
+          target.sections.push(...aiPage.sections);
+        } else {
+          target.name = aiPage.name;
+          target.slug = aiPage.slug;
+          target.template = aiPage.template;
+          target.seoTitle = aiPage.seoTitle;
+          target.seoDescription = aiPage.seoDescription;
+          target.status = "Draft";
+          target.sections = aiPage.sections;
+        }
+        draft.selectedSectionId = mode === "append" ? aiPage.sections[0]?.id || target.sections[0]?.id || null : target.sections[0]?.id || null;
+      }
+      draft.aiDraft = null;
+      draft.builderPanel = "navigator";
+    }, mode === "append" ? "AI sections ditambahkan." : "AI landing page diterapkan.");
+  }
+
   const viewTitle = {
     dashboard: "Dashboard",
     pages: "Landing Pages",
@@ -725,14 +815,12 @@ export default function App() {
             {state.activeView === "editor" && (
               <>
                 <span className={`db-status ${isSupabaseConfigured ? "is-online" : ""}`}>{state.dbStatus}</span>
-                <button className="ghost-btn" onClick={() => duplicatePage()} title="Duplicate page">Copy</button>
                 {page.status === "Published" && activeVisitUrl && (
                   <a className="ghost-btn" href={activeVisitUrl} target="_blank" rel="noreferrer" title="Open published page">Visit Page</a>
                 )}
                 {page.status === "Published" && (
                   <button className="ghost-btn" onClick={purgeActivePageCache} title="Clear cached published page">Purge Cache</button>
                 )}
-                <button className="ghost-btn" onClick={exportPage} title="Export static HTML">Export HTML</button>
                 <button className="primary-btn" onClick={publishPage} title="Save to database and publish static HTML">Publish</button>
               </>
             )}
@@ -759,6 +847,8 @@ export default function App() {
             updateActivePage={updateActivePage}
             updateSelectedSection={updateSelectedSection}
             updateSelectedStyle={updateSelectedStyle}
+            onGenerateAiPage={handleGenerateAiPage}
+            applyAiDraft={applyAiDraft}
           />
         )}
         {state.activeView === "analytics" && <Analytics state={state} setState={setState} />}
@@ -927,13 +1017,13 @@ function AuthScreen({ state, setState, onSubmit }) {
 }
 
 function Editor(props) {
-  const { state, page, selected, setState, patch, addSection, cloneSection, deleteSection, moveSection, reorderSection, toggleHidden, updateActivePage, updateSelectedSection, updateSelectedStyle } = props;
+  const { state, page, selected, setState, patch, addSection, cloneSection, deleteSection, moveSection, reorderSection, toggleHidden, updateActivePage, updateSelectedSection, updateSelectedStyle, onGenerateAiPage, applyAiDraft } = props;
   return (
     <div className="editor-layout">
       <aside className="elementor-panel builder-panel">
         <div className="panel-tabs">
-          {["widgets", "navigator", "page"].map((tab) => (
-            <button key={tab} className={state.builderPanel === tab ? "is-active" : ""} onClick={() => patch((draft) => { draft.builderPanel = tab; })}>{capitalize(tab)}</button>
+          {["widgets", "navigator", "page", "ai"].map((tab) => (
+            <button key={tab} className={state.builderPanel === tab ? "is-active" : ""} onClick={() => patch((draft) => { draft.builderPanel = tab; })}>{tab === "ai" ? "AI" : capitalize(tab)}</button>
           ))}
         </div>
         {state.builderPanel === "widgets" && (
@@ -1002,6 +1092,9 @@ function Editor(props) {
             </div>
           </div>
         )}
+        {state.builderPanel === "ai" && (
+          <AiBuilderPanel state={state} patch={patch} onGenerateAiPage={onGenerateAiPage} applyAiDraft={applyAiDraft} />
+        )}
       </aside>
 
       <section className="preview-panel elementor-canvas">
@@ -1047,6 +1140,64 @@ function Editor(props) {
         </div>
         <Inspector selected={selected} tab={state.inspectorTab} updateSelectedSection={updateSelectedSection} updateSelectedStyle={updateSelectedStyle} cloneSection={cloneSection} deleteSection={deleteSection} />
       </aside>
+    </div>
+  );
+}
+
+function AiBuilderPanel({ state, patch, onGenerateAiPage, applyAiDraft }) {
+  const draft = state.aiDraft;
+  return (
+    <div className="panel-body is-visible ai-builder">
+      <div className="panel-heading">
+        <h2>AI Builder</h2>
+        <p className="muted">Generate landing page Meta Ads yang ringkas, mobile-first, dan fokus conversion.</p>
+      </div>
+      <form className="form-grid" onSubmit={onGenerateAiPage}>
+        <div className="field">
+          <label>Page type</label>
+          <select value={state.aiPageType} onChange={(event) => patch((draftState) => { draftState.aiPageType = event.target.value; })}>
+            {aiPageTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </div>
+        <TextField label="Produk / offer" value={state.aiProduct} onChange={(value) => patch((draftState) => { draftState.aiProduct = value; })} />
+        <TextField label="Target audience" value={state.aiAudience} onChange={(value) => patch((draftState) => { draftState.aiAudience = value; })} />
+        <TextField label="Masalah utama" textarea value={state.aiProblem} onChange={(value) => patch((draftState) => { draftState.aiProblem = value; })} />
+        <TextField label="Benefit utama" textarea value={state.aiBenefit} onChange={(value) => patch((draftState) => { draftState.aiBenefit = value; })} />
+        <TextField label="Offer / bonus" value={state.aiOffer} onChange={(value) => patch((draftState) => { draftState.aiOffer = value; })} />
+        <TextField label="Harga / promo" value={state.aiPrice} onChange={(value) => patch((draftState) => { draftState.aiPrice = value; })} />
+        <TextField label="Goal CTA" value={state.aiCtaGoal} onChange={(value) => patch((draftState) => { draftState.aiCtaGoal = value; })} />
+        <div className="field">
+          <label>Tone</label>
+          <select value={state.aiTone} onChange={(event) => patch((draftState) => { draftState.aiTone = event.target.value; })}>
+            {aiToneOptions.map((tone) => <option key={tone} value={tone}>{tone}</option>)}
+          </select>
+        </div>
+        <button className="primary-btn" type="submit" disabled={state.aiBusy}>{state.aiBusy ? "Generating..." : "Generate Landing Page"}</button>
+        <p className="field-help">AI tidak langsung menimpa halaman. Cek preview draft dulu, lalu pilih apply.</p>
+      </form>
+
+      {draft && (
+        <div className="ai-draft">
+          <div>
+            <p className="eyebrow">Generated Draft</p>
+            <h3>{draft.name}</h3>
+            <p className="muted">{draft.seoDescription}</p>
+          </div>
+          <div className="ai-section-list">
+            {draft.sections.map((section, index) => (
+              <div className="ai-section-row" key={`${section.type}-${index}`}>
+                <strong>{index + 1}. {labelForType(section.type)}</strong>
+                <span>{section.title || section.cta || stripHtml(section.body).slice(0, 72) || "Section"}</span>
+              </div>
+            ))}
+          </div>
+          <div className="ai-actions">
+            <button className="primary-btn" type="button" onClick={() => applyAiDraft("replace")}>Replace Page</button>
+            <button className="ghost-btn" type="button" onClick={() => applyAiDraft("append")}>Append</button>
+            <button className="ghost-btn" type="button" onClick={() => applyAiDraft("new")}>Create New</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1710,6 +1861,139 @@ function clonePage(source) {
   return clone;
 }
 
+function normalizeAiDraft(payload, currentPage) {
+  const rawSections = Array.isArray(payload?.sections) && payload.sections.length ? payload.sections : [];
+  const sections = rawSections
+    .slice(0, 10)
+    .map((section, index) => normalizeAiSection(section, index))
+    .filter(Boolean);
+
+  if (!sections.length) {
+    throw new Error("AI belum mengembalikan section yang valid.");
+  }
+
+  const name = String(payload?.pageName || payload?.name || currentPage?.name || "AI Landing Page").trim().slice(0, 80);
+  const slug = makeSlug(payload?.slug || name);
+  return {
+    id: `lp-ai-${Date.now()}`,
+    name,
+    slug,
+    status: "Draft",
+    template: payload?.template || "AI Builder",
+    views: 0,
+    ctr: 0,
+    leads: 0,
+    seoTitle: String(payload?.seoTitle || name).slice(0, 80),
+    seoDescription: String(payload?.seoDescription || currentPage?.seoDescription || "Landing page cepat untuk campaign Meta Ads.").slice(0, 160),
+    sections: sections.map(normalizeSection)
+  };
+}
+
+function normalizeAiSection(section, index) {
+  const type = sectionDefaults[section?.type] ? section.type : "text";
+  const base = {
+    id: `${type}-ai-${Date.now()}-${index}`,
+    type,
+    style: { ...defaultStyleForType(type), ...(section.style || {}) }
+  };
+
+  if (type === "header") {
+    return {
+      ...base,
+      title: String(section.title || "Headline landing page Anda").slice(0, 220),
+      body: String(section.body || section.subtitle || "").slice(0, 420),
+      level: ["h1", "h2", "h3"].includes(section.level) ? section.level : "h1"
+    };
+  }
+  if (type === "text") {
+    return {
+      ...base,
+      body: sanitizeRichHtml(String(section.body || section.text || "Tulis paragraf pendek untuk landing page."))
+    };
+  }
+  if (type === "bulletList") {
+    const items = Array.isArray(section.items) ? section.items : splitItems(section.items || section.body);
+    return {
+      ...base,
+      title: String(section.title || "Benefit utama").slice(0, 120),
+      items: items.slice(0, 8).map((item) => String(item).trim()).filter(Boolean).join("|") || "Benefit pertama|Benefit kedua",
+      icon: String(section.icon || "✓").slice(0, 3)
+    };
+  }
+  if (type === "button") {
+    return {
+      ...base,
+      cta: String(section.cta || "Klik Sekarang").slice(0, 44),
+      link: String(section.link || "#offer").slice(0, 240),
+      icon: String(section.icon || "→").slice(0, 3),
+      sticky: Boolean(section.sticky),
+      pixelEvent: metaPixelEvents.includes(section.pixelEvent) ? section.pixelEvent : "Lead"
+    };
+  }
+  if (type === "whatsappButton") {
+    return {
+      ...base,
+      cta: String(section.cta || "Chat WhatsApp").slice(0, 44),
+      phone: String(section.phone || "6281234567890").replace(/\D/g, "").slice(0, 18),
+      message: String(section.message || "Halo, saya tertarik dengan offer ini.").slice(0, 240),
+      icon: String(section.icon || "☎").slice(0, 3),
+      sticky: Boolean(section.sticky),
+      pixelEvent: metaPixelEvents.includes(section.pixelEvent) ? section.pixelEvent : "Contact"
+    };
+  }
+  if (type === "image") {
+    return {
+      ...base,
+      src: String(section.src || "").slice(0, 600),
+      image: String(section.image || section.alt || "Gambar produk atau offer").slice(0, 100),
+      caption: String(section.caption || "").slice(0, 120),
+      body: String(section.body || "").slice(0, 160),
+      imageSize: Number(section.imageSize || 100)
+    };
+  }
+  if (type === "divider") {
+    return {
+      ...base,
+      body: "",
+      thickness: Number(section.thickness || 1),
+      dividerStyle: ["solid", "dashed", "dotted"].includes(section.dividerStyle) ? section.dividerStyle : "solid"
+    };
+  }
+  if (type === "htmlCode") {
+    return {
+      ...base,
+      body: sanitizeRichHtml(String(section.body || "<div>Custom HTML</div>"))
+    };
+  }
+  return null;
+}
+
+function pageFromAiDraft(aiDraft) {
+  return {
+    ...aiDraft,
+    id: `lp-${Date.now()}`,
+    slug: uniqueSlug(aiDraft.slug || aiDraft.name),
+    status: "Draft",
+    sections: aiDraft.sections.map((section, index) => ({
+      ...cloneData(section),
+      id: `${section.type}-${Date.now()}-${index}`
+    }))
+  };
+}
+
+function makeSlug(value) {
+  return String(value || "landing-page")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "landing-page";
+}
+
+function uniqueSlug(value) {
+  return `${makeSlug(value)}-${String(Date.now()).slice(-4)}`;
+}
+
 function labelForType(type) {
   return blockCatalog.find((block) => block.type === type)?.label || type;
 }
@@ -1757,6 +2041,10 @@ function richHtml(value) {
   const raw = String(value || "");
   const html = /<\/?[a-z][\s\S]*>/i.test(raw) ? raw : escapeHtml(raw);
   return sanitizeRichHtml(html);
+}
+
+function stripHtml(value) {
+  return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function sanitizeRichHtml(html) {

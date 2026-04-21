@@ -3,6 +3,7 @@
   "name": "landingpro-publish",
   "main": "cloudflare-worker.js",
   "compatibility_date": "2026-04-20",
+  "workers_dev": true,
   "vars": {
     "SUPABASE_URL": "https://uzrbxozweucrntreqvib.supabase.co",
     "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6cmJ4b3p3ZXVjcm50cmVxdmliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MTQ1OTgsImV4cCI6MjA5MjE5MDU5OH0.3j3zDlykJV5NEB48guM3IDLokRUNLXq3aOblk_I3YUc"
@@ -11,6 +12,12 @@
     {
       "binding": "LANDINGPRO_PAGES",
       "id": "e6af7cccf94e465dbff1d377367c2587"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "lp.novamos.id/*",
+      "zone_name": "novamos.id"
     }
   ],
   "observability": {

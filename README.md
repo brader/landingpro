@@ -116,9 +116,19 @@ Variable Cloudflare Worker:
 ```text
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` tidak dibutuhkan lagi di Worker publish karena public visitor tidak melakukan query database.
+`SUPABASE_SERVICE_ROLE_KEY` tidak dibutuhkan lagi di Worker publish karena public visitor tidak melakukan query database. `OPENAI_API_KEY` hanya disimpan sebagai Worker secret, tidak pernah dipasang di frontend.
+
+Set secret AI Builder:
+
+```text
+npx wrangler secret put OPENAI_API_KEY --config deploy/wrangler.publish.jsonc
+```
+
+AI Builder tersedia di tab `AI` pada workspace Editor. User mengisi brief produk, audience, problem, benefit, offer, harga, CTA, dan tone. Worker memverifikasi Supabase session, memanggil OpenAI, lalu mengembalikan JSON section yang bisa di-apply sebagai `Replace Page`, `Append`, atau `Create New`.
 
 Deploy Worker publish:
 
@@ -160,7 +170,7 @@ Untuk Cloudflare Workers/Pages mode baru, SPA fallback ditangani oleh konfiguras
 - Drag-and-drop widget dan navigator.
 - Upload image dengan auto resize/compress.
 - Preview mobile/tablet/desktop.
-- Export static HTML.
+- AI Builder untuk generate landing page Meta Ads dari brief.
 - Publish static HTML ke Supabase Storage.
 - Basic analytics mock.
 - Domain publish utama di Settings.

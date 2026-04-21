@@ -11,6 +11,10 @@ export default {
       return purgePageCache(request, url, env);
     }
 
+    if (url.pathname === "/__landingpro/ai/generate-page") {
+      return generateAiLandingPage(request, env);
+    }
+
     if (!slug) {
       return new Response("LandingPro published pages", {
         headers: {
@@ -59,6 +63,95 @@ export default {
     return response;
   }
 };
+
+async function generateAiLandingPage(request, env) {
+  const headers = corsHeaders(env);
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers });
+  }
+
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method not allowed" }, 405, headers);
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    return jsonResponse({ ok: false, error: "OPENAI_API_KEY belum diset di Worker secret." }, 503, headers);
+  }
+
+  const authResult = await verifySupabaseUser(request, env);
+  if (!authResult.ok) {
+    return jsonResponse({ ok: false, error: authResult.error }, 401, headers);
+  }
+
+  let body = {};
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid JSON" }, 400, headers);
+  }
+
+  const brief = sanitizeBrief(body.brief || {});
+  if (!brief.product || !brief.audience || !brief.problem) {
+    return jsonResponse({ ok: false, error: "Isi minimal produk, target audience, dan masalah utama." }, 400, headers);
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_MODEL || "gpt-4.1-mini",
+      temperature: 0.7,
+      max_tokens: 1800,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "landingpro_ai_page",
+          strict: true,
+          schema: aiPageSchema()
+        }
+      },
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert direct response landing page copywriter for Meta Ads traffic in Indonesia. Generate concise, mobile-first, high-conversion landing pages for a simple no-code builder. Return only valid JSON matching the schema. Avoid heavy sections, fake testimonials, impossible guarantees, medical or financial overclaims, and unsupported widget types. Use Indonesian unless the brief clearly requests another language."
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Generate a ready-to-edit LandingPro page.",
+            rules: [
+              "Use 6 to 8 sections only.",
+              "Prefer short paragraphs and scannable bullets.",
+              "Use one sticky WhatsApp or CTA button when relevant.",
+              "Do not invent real testimonials; use proof placeholders if needed.",
+              "Map WhatsApp CTA to pixelEvent Contact, lead CTA to Lead, product detail to ViewContent.",
+              "Supported section types: header, text, bulletList, image, divider, button, whatsappButton, htmlCode."
+            ],
+            brief
+          })
+        }
+      ]
+    })
+  });
+
+  const openAiPayload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return jsonResponse({ ok: false, error: openAiPayload.error?.message || "OpenAI request gagal." }, 502, headers);
+  }
+
+  const content = openAiPayload.choices?.[0]?.message?.content || "";
+  let page = null;
+  try {
+    page = JSON.parse(content);
+  } catch {
+    return jsonResponse({ ok: false, error: "AI mengembalikan JSON yang tidak valid." }, 502, headers);
+  }
+
+  return jsonResponse({ ok: true, page }, 200, headers);
+}
 
 async function publishPageToKv(request, url, env, ctx) {
   const headers = corsHeaders(env);
@@ -144,6 +237,88 @@ async function purgePageCache(request, url, env) {
   });
   const purged = await caches.default.delete(cacheKey);
   return jsonResponse({ ok: true, slug, purged }, 200, headers);
+}
+
+function sanitizeBrief(brief) {
+  return {
+    pageType: trimText(brief.pageType, 60),
+    product: trimText(brief.product, 160),
+    audience: trimText(brief.audience, 220),
+    problem: trimText(brief.problem, 500),
+    benefit: trimText(brief.benefit, 500),
+    offer: trimText(brief.offer, 220),
+    price: trimText(brief.price, 80),
+    ctaGoal: trimText(brief.ctaGoal, 100),
+    tone: trimText(brief.tone, 80),
+    currentPage: brief.currentPage || null
+  };
+}
+
+function trimText(value, maxLength) {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function aiPageSchema() {
+  const styleSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      background: { type: "string" },
+      textColor: { type: "string" },
+      accentColor: { type: "string" },
+      align: { type: "string", enum: ["left", "center", "right"] },
+      padding: { type: "number" },
+      radius: { type: "number" },
+      hidden: { type: "boolean" }
+    },
+    required: ["background", "textColor", "accentColor", "align", "padding", "radius", "hidden"]
+  };
+
+  const sectionSchema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      type: { type: "string", enum: ["header", "text", "bulletList", "image", "divider", "button", "whatsappButton", "htmlCode"] },
+      title: { type: "string" },
+      body: { type: "string" },
+      level: { type: "string", enum: ["h1", "h2", "h3"] },
+      items: { type: "array", items: { type: "string" } },
+      icon: { type: "string" },
+      cta: { type: "string" },
+      link: { type: "string" },
+      phone: { type: "string" },
+      message: { type: "string" },
+      pixelEvent: { type: "string", enum: ["ViewContent", "Lead", "Contact", "CompleteRegistration", "AddToCart", "InitiateCheckout", "Purchase", "Subscribe"] },
+      sticky: { type: "boolean" },
+      src: { type: "string" },
+      image: { type: "string" },
+      caption: { type: "string" },
+      imageSize: { type: "number" },
+      thickness: { type: "number" },
+      dividerStyle: { type: "string", enum: ["solid", "dashed", "dotted"] },
+      style: styleSchema
+    },
+    required: ["type", "title", "body", "level", "items", "icon", "cta", "link", "phone", "message", "pixelEvent", "sticky", "src", "image", "caption", "imageSize", "thickness", "dividerStyle", "style"]
+  };
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      pageName: { type: "string" },
+      slug: { type: "string" },
+      template: { type: "string" },
+      seoTitle: { type: "string" },
+      seoDescription: { type: "string" },
+      sections: {
+        type: "array",
+        minItems: 5,
+        maxItems: 10,
+        items: sectionSchema
+      }
+    },
+    required: ["pageName", "slug", "template", "seoTitle", "seoDescription", "sections"]
+  };
 }
 
 function corsHeaders(env) {

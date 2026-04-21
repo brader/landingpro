@@ -413,6 +413,31 @@ export async function purgePublishedPage(domain, slug) {
   }
 }
 
+export async function generateAiLandingPage(domain, brief) {
+  const hostname = cleanPublishHostname(domain || publicDomain);
+  if (!hostname) throw new Error("Domain publish belum valid.");
+  if (!supabase) throw new Error("Supabase belum terhubung.");
+
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Login dulu untuk memakai AI Builder.");
+
+  const response = await fetch(`https://${hostname}/__landingpro/ai/generate-page`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ brief })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || "AI Builder belum bisa memproses request.");
+  }
+  return payload.page;
+}
+
 function cleanPublishHostname(domain) {
   return String(domain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 }

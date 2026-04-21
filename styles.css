@@ -350,6 +350,12 @@ button {
   background: var(--accent-dark);
 }
 
+.primary-btn:disabled,
+.ghost-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .danger-btn {
   border-color: rgba(194, 65, 55, 0.28);
   color: var(--danger);
@@ -545,7 +551,7 @@ button {
 
 .panel-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border-bottom: 1px solid var(--line);
   background: #f8fafc;
 }
@@ -782,6 +788,53 @@ button {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.ai-builder {
+  display: grid;
+  gap: 16px;
+}
+
+.ai-draft {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.ai-draft h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.ai-section-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-section-row {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f9fbfd;
+}
+
+.ai-section-row strong,
+.ai-section-row span {
+  font-size: 12px;
+}
+
+.ai-section-row span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.ai-actions {
+  display: grid;
+  gap: 8px;
 }
 
 .color-field {
